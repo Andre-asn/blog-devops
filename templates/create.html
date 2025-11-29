@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+
+{% block title %}Create Post - Blog{% endblock %}
+
+{% block content %}
+<h1>Create New Blog Post</h1>
+
+<form method="POST" action="{{ url_for('create_post') }}" style="margin-top: 2rem;">
+    <div style="margin-bottom: 1.5rem;">
+        <label for="title" style="display: block; margin-bottom: 0.5rem; font-weight: bold;">
+            Title *
+        </label>
+        <input 
+            type="text" 
+            id="title" 
+            name="title" 
+            required 
+            style="width: 100%; padding: 10px; font-size: 1rem; border: 1px solid #ddd; border-radius: 4px;"
+            placeholder="Enter post title"
+        >
+    </div>
+    
+    <div style="margin-bottom: 1.5rem;">
+        <label for="author" style="display: block; margin-bottom: 0.5rem; font-weight: bold;">
+            Author
+        </label>
+        <input 
+            type="text" 
+            id="author" 
+            name="author" 
+            style="width: 100%; padding: 10px; font-size: 1rem; border: 1px solid #ddd; border-radius: 4px;"
+            placeholder="Your name (optional)"
+        >
+    </div>
+    
+    <div style="margin-bottom: 1.5rem;">
+        <label for="content" style="display: block; margin-bottom: 0.5rem; font-weight: bold;">
+            Content *
+        </label>
+        <textarea 
+            id="content" 
+            name="content" 
+            required 
+            rows="15"
+            style="width: 100%; padding: 10px; font-size: 1rem; border: 1px solid #ddd; border-radius: 4px; font-family: inherit; resize: vertical;"
+            placeholder="Write your blog post content here..."
+        ></textarea>
+    </div>
+    
+    <div style="display: flex; gap: 10px;">
+        <button type="submit" class="btn btn-success">Publish Post</button>
+        <a href="{{ url_for('index') }}" class="btn" style="background-color: #95a5a6; text-decoration: none;">
+            Cancel
+        </a>
+    </div>
+</form>
+{% endblock %}
+

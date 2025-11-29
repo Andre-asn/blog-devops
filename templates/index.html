@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+
+{% block title %}Home - Blog{% endblock %}
+
+{% block content %}
+<h1>All Blog Posts</h1>
+
+{% if posts %}
+    <div style="margin-top: 2rem;">
+        {% for post in posts %}
+            <article style="border-bottom: 1px solid #eee; padding: 1.5rem 0;">
+                <h2 style="margin-bottom: 0.5rem;">
+                    <a href="{{ url_for('view_post', post_id=post._id) }}" style="color: #2c3e50; text-decoration: none;">
+                        {{ post.title }}
+                    </a>
+                </h2>
+                <p style="color: #7f8c8d; font-size: 0.9rem; margin-bottom: 1rem;">
+                    By {{ post.author }} on {{ post.created_at.strftime('%B %d, %Y at %I:%M %p') }}
+                </p>
+                <p style="margin-bottom: 1rem;">
+                    {{ post.content[:200] }}{% if post.content|length > 200 %}...{% endif %}
+                </p>
+                <a href="{{ url_for('view_post', post_id=post._id) }}" class="btn" style="font-size: 0.9rem; padding: 8px 16px;">
+                    Read More
+                </a>
+            </article>
+        {% endfor %}
+    </div>
+{% else %}
+    <div style="text-align: center; padding: 3rem 0;">
+        <p style="color: #7f8c8d; font-size: 1.1rem; margin-bottom: 1rem;">
+            No blog posts yet. Be the first to create one!
+        </p>
+        <a href="{{ url_for('create_post') }}" class="btn">Create Your First Post</a>
+    </div>
+{% endif %}
+{% endblock %}
+

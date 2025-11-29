@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+
+{% block title %}{{ post.title }} - Blog{% endblock %}
+
+{% block content %}
+<article>
+    <div style="margin-bottom: 1rem;">
+        <a href="{{ url_for('index') }}" style="color: #3498db; text-decoration: none;">← Back to all posts</a>
+    </div>
+    
+    <h1 style="margin-bottom: 1rem; color: #2c3e50;">{{ post.title }}</h1>
+    
+    <div style="color: #7f8c8d; font-size: 0.9rem; margin-bottom: 2rem; padding-bottom: 1rem; border-bottom: 1px solid #eee;">
+        <p>
+            <strong>Author:</strong> {{ post.author }}<br>
+            <strong>Published:</strong> {{ post.created_at.strftime('%B %d, %Y at %I:%M %p') }}
+        </p>
+    </div>
+    
+    <div style="line-height: 1.8; font-size: 1.05rem; white-space: pre-wrap;">
+        {{ post.content }}
+    </div>
+</article>
+{% endblock %}
+
