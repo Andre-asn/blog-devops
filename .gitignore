@@ -30,6 +30,9 @@ instance/
 # Environment variables
 .env
 
+# Test database
+blog_test_db/
+
 # IDE
 .vscode/
 .idea/

@@ -10,12 +10,21 @@ A blog website built with Flask and MongoDB, designed with DevOps practices in m
 
 ## Tech Stack
 
-- **Backend**: Python Flask
+- **Backend**: Python Flask with Object-Oriented Design
 - **Database**: MongoDB
 - **Frontend**: Flask Templates (HTML/CSS)
-- **Testing**: Pytest 
-- **CI/CD**: GitHub Actions 
-- **Deployment**: DigitalOcean 
+- **Architecture**: MVC pattern with Repository pattern
+- **Testing**: Pytest ✅
+
+## Architecture
+
+This project follows **Object-Oriented Design** principles:
+
+- **Models** (`models/`): Domain entities (BlogPost class)
+- **Repositories** (`repositories/`): Data access layer (BlogRepository, DatabaseConnection)
+- **Controllers** (`controllers/`): Request handlers (BlogController with Flask Blueprint)
+- **Configuration** (`config.py`): Configuration management classes
+- **Application Factory**: `BlogApplication` class for app initialization 
 
 ## Prerequisites
 
@@ -82,16 +91,32 @@ A blog website built with Flask and MongoDB, designed with DevOps practices in m
 
 ```
 blog-devops/
-├── app.py                 # Main Flask application
+├── app.py                 # Main Flask application (Application Factory)
+├── config.py             # Configuration classes
+├── conftest.py           # Pytest configuration and fixtures
+├── pytest.ini            # Pytest settings
 ├── requirements.txt       # Python dependencies
 ├── env.example            # Environment variables template
 ├── .gitignore            # Git ignore file
 ├── README.md             # This file
-└── templates/            # Flask HTML templates
-    ├── base.html         # Base template
-    ├── index.html        # Home page
-    ├── create.html       # Create post page
-    └── view.html         # View post page
+├── models/               # Data models (OOP)
+│   ├── __init__.py
+│   └── blog_post.py      # BlogPost model class
+├── repositories/         # Data access layer (Repository pattern)
+│   ├── __init__.py
+│   ├── database.py       # DatabaseConnection class
+│   └── blog_repository.py # BlogRepository class
+├── controllers/          # Request handlers (MVC pattern)
+│   ├── __init__.py
+│   └── blog_controller.py # BlogController class with Blueprint
+├── templates/            # Flask HTML templates
+│   ├── base.html         # Base template
+│   ├── index.html        # Home page
+│   ├── create.html       # Create post page
+│   └── view.html         # View post page
+└── tests/                # Test files
+    ├── __init__.py       # Test package init
+    └── test_routes.py    # Route tests
 ```
 
 ## Usage
@@ -108,15 +133,42 @@ blog-devops/
 - `FLASK_ENV`: Flask environment (development/production)
 - `FLASK_DEBUG`: Enable/disable debug mode
 
-## Future Enhancements
+## Testing
 
-- [ ] Pytest test suite
-- [ ] GitHub Actions CI/CD pipeline
-- [ ] DigitalOcean deployment configuration
-- [ ] Prometheus monitoring setup
-- [ ] Grafana dashboards
-- [ ] Docker containerization
-- [ ] Nginx reverse proxy configuration
+The project includes a comprehensive Pytest test suite. Tests use a separate test database (`blog_test_db`) that is automatically created and cleaned up.
+
+### Running Tests
+
+1. **Make sure MongoDB is running** (tests need MongoDB connection)
+
+2. **Run all tests:**
+   ```bash
+   pytest
+   ```
+
+3. **Run tests with verbose output:**
+   ```bash
+   pytest -v
+   ```
+
+4. **Run tests with coverage report:**
+   ```bash
+   pytest --cov=app --cov-report=html
+   ```
+
+5. **Run a specific test file:**
+   ```bash
+   pytest tests/test_routes.py
+   ```
+
+### Test Coverage
+
+The test suite covers:
+- Home page displaying all posts (empty and with posts)
+- Creating new blog posts (success and validation)
+- Viewing individual posts
+- Error handling (invalid IDs, missing posts)
+- Form validation
 
 ## License
 
