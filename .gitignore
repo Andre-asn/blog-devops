@@ -44,3 +44,12 @@ blog_test_db/
 .DS_Store
 Thumbs.db
 
+.env
+*.pyc
+__pycache__/
+venv/
+*.log
+.pytest_cache/
+htmlcov/
+.coverage
+*.egg-info/

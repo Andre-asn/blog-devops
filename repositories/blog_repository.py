@@ -2,6 +2,7 @@ from typing import Optional, List
 from pymongo.collection import Collection
 from bson import ObjectId
 from models.blog_post import BlogPost
+from monitoring.metrics import track_database_operation
 
 
 class BlogRepository:
@@ -16,6 +17,7 @@ class BlogRepository:
         """
         self.collection = collection
     
+    @track_database_operation('create')
     def create(self, blog_post: BlogPost) -> str:
         """
         Create a new blog post in the database
@@ -33,6 +35,7 @@ class BlogRepository:
         result = self.collection.insert_one(post_dict)
         return str(result.inserted_id)
     
+    @track_database_operation('get_by_id')
     def get_by_id(self, post_id: str) -> Optional[BlogPost]:
         """
         Retrieve a blog post by its ID
@@ -53,6 +56,7 @@ class BlogRepository:
         except (ValueError, TypeError, Exception):
             return None
     
+    @track_database_operation('get_all')
     def get_all(self, sort_by: str = 'created_at', order: int = -1) -> List[BlogPost]:
         """
         Retrieve all blog posts
@@ -67,6 +71,7 @@ class BlogRepository:
         posts = list(self.collection.find().sort(sort_by, order))
         return [BlogPost.from_dict(post) for post in posts]
     
+    @track_database_operation('delete')
     def delete(self, post_id: str) -> bool:
         """
         Delete a blog post by its ID
@@ -84,6 +89,7 @@ class BlogRepository:
         except (ValueError, TypeError, Exception):
             return False
     
+    @track_database_operation('update')
     def update(self, post_id: str, blog_post: BlogPost) -> bool:
         """
         Update an existing blog post
@@ -119,4 +125,3 @@ class BlogRepository:
             Number of blog posts in the collection
         """
         return self.collection.count_documents({})
-

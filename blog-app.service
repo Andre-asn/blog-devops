@@ -1,0 +1,24 @@
+[Unit]
+Description="Blog Flask Application"
+After=network.target mongodb.service
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/blog-app
+Environment="PATH=/var/www/blog-app/venv/bin"
+EnvironmentFile=/var/www/blog-app/.env
+ExecStart=/var/www/blog-app/venv/bin/gunicorn --bind 0.0.0.0:5000 --workers 4 --timeout 120 --access-logfile /var/log/blog-app/access.log --error-logfile /var/log/blog-app/error.log app:app
+Restart=always
+RestartSec=10
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/log/blog-app
+
+[Install]
+WantedBy=multi-user.target

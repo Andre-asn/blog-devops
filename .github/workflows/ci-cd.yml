@@ -1,0 +1,131 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    services:
+      mongodb:
+        image: mongo:7.0
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --eval 'db.runCommand({ ping: 1 })'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Cache pip dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+    
+    - name: Run tests
+      env:
+        MONGO_URI: mongodb://localhost:27017/
+        SECRET_KEY: ${{ secrets.SECRET_KEY }}
+      run: |
+        pytest -v --cov=. --cov-report=xml --cov-report=html
+    
+    - name: Upload coverage reports
+      uses: codecov/codecov-action@v3
+      with:
+        files: ./coverage.xml
+        fail_ci_if_error: false
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup SSH
+      uses: webfactory/ssh-agent@v0.8.0
+      with:
+        ssh-private-key: ${{ secrets.DIGITALOCEAN_SSH_KEY }}
+    
+    - name: Add server to known hosts
+      run: |
+        mkdir -p ~/.ssh
+        ssh-keyscan -H ${{ secrets.DIGITALOCEAN_HOST }} >> ~/.ssh/known_hosts
+    
+    - name: Deploy to DigitalOcean
+      env:
+        HOST: ${{ secrets.DIGITALOCEAN_HOST }}
+        USER: ${{ secrets.DIGITALOCEAN_USER }}
+        APP_DIR: ${{ secrets.APP_DIRECTORY }}
+        MONGO_URI: ${{ secrets.MONGO_URI }}
+        SECRET_KEY: ${{ secrets.SECRET_KEY }}
+        DATABASE_NAME: ${{ secrets.DATABASE_NAME }}
+      run: |
+        ssh $USER@$HOST << 'ENDSSH'
+          set -e
+          cd ${{ secrets.APP_DIRECTORY }}
+          
+          # Pull latest code
+          git pull origin main
+          
+          # Activate virtual environment
+          source venv/bin/activate
+          
+          # Install/update dependencies
+          pip install -r requirements.txt
+          
+          # Update environment variables
+          cat > .env << EOF
+        SECRET_KEY=${{ secrets.SECRET_KEY }}
+        MONGO_URI=${{ secrets.MONGO_URI }}
+        DATABASE_NAME=${{ secrets.DATABASE_NAME }}
+        FLASK_ENV=production
+        FLASK_DEBUG=False
+        EOF
+          
+          # Restart the application
+          sudo systemctl restart blog-app
+          
+          # Wait for app to start
+          sleep 5
+          
+          # Health check
+          curl -f http://localhost:5000/ || exit 1
+          
+          echo "Deployment successful!"
+        ENDSSH
+    
+    - name: Notify deployment status
+      if: always()
+      run: |
+        if [ ${{ job.status }} == 'success' ]; then
+          echo "✅ Deployment successful to DigitalOcean Droplet 1"
+        else
+          echo "❌ Deployment failed"
+          exit 1
+        fi

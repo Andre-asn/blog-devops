@@ -2,6 +2,12 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash
 from datetime import datetime
 from repositories.blog_repository import BlogRepository
 from models.blog_post import BlogPost
+from monitoring.metrics import (
+    track_request_metrics, 
+    blog_posts_created, 
+    blog_posts_viewed,
+    update_blog_posts_count
+)
 
 
 class BlogController:
@@ -26,6 +32,7 @@ class BlogController:
         self.blueprint.add_url_rule('/post/<post_id>', 'view_post', self.view_post, 
                                     methods=['GET'])
     
+    @track_request_metrics
     def index(self):
         """Handle home page request - displays all blog posts"""
         try:
@@ -38,11 +45,16 @@ class BlogController:
                 if '_id' in post_dict:
                     post_dict['id'] = str(post_dict['_id'])
                 posts_data.append(post_dict)
+            
+            # Update metrics
+            update_blog_posts_count(self.repository)
+            
             return render_template('index.html', posts=posts_data)
         except Exception as e:
             flash(f'An error occurred while loading posts: {str(e)}', 'error')
             return render_template('index.html', posts=[])
     
+    @track_request_metrics
     def create_post(self):
         """Handle blog post creation (GET and POST)"""
         if request.method == 'POST':
@@ -71,12 +83,18 @@ class BlogController:
         try:
             # Save to database
             post_id = self.repository.create(blog_post)
+            
+            # Update metrics
+            blog_posts_created.inc()
+            update_blog_posts_count(self.repository)
+            
             flash('Blog post created successfully!', 'success')
             return redirect(url_for('blog.view_post', post_id=post_id))
         except Exception as e:
             flash(f'An error occurred while creating the post: {str(e)}', 'error')
             return render_template('create.html')
     
+    @track_request_metrics
     def view_post(self, post_id: str):
         """Handle viewing a single blog post"""
         try:
@@ -85,6 +103,9 @@ class BlogController:
             if not blog_post:
                 flash('Post not found!', 'error')
                 return redirect(url_for('blog.index'))
+            
+            # Update metrics
+            blog_posts_viewed.inc()
             
             # Convert BlogPost to dict for template rendering
             post_data = blog_post.to_dict()
@@ -95,4 +116,3 @@ class BlogController:
         except Exception as e:
             flash('Invalid post ID!', 'error')
             return redirect(url_for('blog.index'))
-

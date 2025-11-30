@@ -3,6 +3,7 @@ from config import Config
 from repositories.database import DatabaseConnection
 from repositories.blog_repository import BlogRepository
 from controllers.blog_controller import BlogController
+from monitoring.metrics import metrics_endpoint, update_blog_posts_count
 
 
 class BlogApplication:
@@ -42,6 +43,18 @@ class BlogApplication:
         # Setup controllers and register blueprints
         self.blog_controller = BlogController(self.blog_repository)
         self.app.register_blueprint(self.blog_controller.blueprint)
+        
+        # Register metrics endpoint
+        self.app.add_url_rule('/metrics', 'metrics', metrics_endpoint)
+        
+        # Register health check endpoint
+        @self.app.route('/health')
+        def health_check():
+            return {'status': 'healthy', 'service': 'blog-app'}, 200
+        
+        # Update metrics on startup
+        if self.blog_repository:
+            update_blog_posts_count(self.blog_repository)
         
         # Store repository reference for testing
         self.app.extensions['blog_repository'] = self.blog_repository
