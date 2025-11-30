@@ -48,7 +48,7 @@ jobs:
     - name: Run tests
       env:
         MONGO_URI: mongodb://localhost:27017/
-        SECRET_KEY: ${{ secrets.SECRET_KEY }}
+        SECRET_KEY: test-secret-key-for-ci
       run: |
         pytest -v --cov=. --cov-report=xml --cov-report=html
     
@@ -82,42 +82,67 @@ jobs:
         HOST: ${{ secrets.DIGITALOCEAN_HOST }}
         USER: ${{ secrets.DIGITALOCEAN_USER }}
         APP_DIR: ${{ secrets.APP_DIRECTORY }}
-        MONGO_URI: ${{ secrets.MONGO_URI }}
-        SECRET_KEY: ${{ secrets.SECRET_KEY }}
-        DATABASE_NAME: ${{ secrets.DATABASE_NAME }}
       run: |
         ssh $USER@$HOST << 'ENDSSH'
           set -e
+          
+          # Navigate to application directory
           cd ${{ secrets.APP_DIRECTORY }}
           
           # Pull latest code
+          echo "📥 Pulling latest code..."
           git pull origin main
           
           # Activate virtual environment
+          echo "🐍 Activating virtual environment..."
           source venv/bin/activate
           
           # Install/update dependencies
+          echo "📦 Installing dependencies..."
           pip install -r requirements.txt
           
           # Update environment variables
-          cat > .env << EOF
-        SECRET_KEY=${{ secrets.SECRET_KEY }}
-        MONGO_URI=${{ secrets.MONGO_URI }}
-        DATABASE_NAME=${{ secrets.DATABASE_NAME }}
-        FLASK_ENV=production
-        FLASK_DEBUG=False
-        EOF
+          echo "⚙️  Updating environment variables..."
+          cat > .env << 'EOF'
+SECRET_KEY=${{ secrets.SECRET_KEY }}
+MONGO_URI=${{ secrets.MONGO_URI }}
+DATABASE_NAME=${{ secrets.DATABASE_NAME }}
+FLASK_ENV=production
+FLASK_DEBUG=False
+EOF
+          
+          # Ensure logs directory exists
+          mkdir -p logs
+          
+          # Deactivate venv
+          deactivate
           
           # Restart the application
+          echo "🔄 Restarting application..."
           sudo systemctl restart blog-app
           
           # Wait for app to start
-          sleep 5
+          echo "⏳ Waiting for application to start..."
+          sleep 8
           
-          # Health check
-          curl -f http://localhost:5000/ || exit 1
+          # Health check with retry
+          for i in {1..5}; do
+            if curl -f http://localhost:5000/health > /dev/null 2>&1; then
+              echo "✅ Health check passed!"
+              break
+            else
+              echo "Attempt $i: Health check failed, waiting..."
+              sleep 3
+            fi
+            
+            if [ $i -eq 5 ]; then
+              echo "❌ Health check failed after 5 attempts"
+              sudo journalctl -u blog-app -n 30
+              exit 1
+            fi
+          done
           
-          echo "Deployment successful!"
+          echo "🎉 Deployment successful!"
         ENDSSH
     
     - name: Notify deployment status

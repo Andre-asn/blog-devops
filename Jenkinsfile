@@ -82,46 +82,71 @@ pipeline {
             steps {
                 echo 'Deploying to DigitalOcean Droplet 2...'
                 script {
-                    def remote = [:]
-                    remote.name = 'droplet2'
-                    remote.host = "${DROPLET2_HOST}"
-                    remote.user = "${DROPLET2_USER}"
-                    remote.identityFile = "${DROPLET2_SSH_KEY}"
-                    remote.allowAnyHosts = true
-                    
-                    sshCommand remote: remote, command: """
-                        set -e
-                        cd ${APP_DIR}
-                        
-                        # Pull latest code
-                        git pull origin main
-                        
-                        # Activate virtual environment
-                        source venv/bin/activate
-                        
-                        # Install/update dependencies
-                        pip install -r requirements.txt
-                        
-                        # Update environment variables
-                        cat > .env << 'EOF'
+                    sshagent(credentials: ['droplet2-ssh-key']) {
+                        sh """
+                            ssh -o StrictHostKeyChecking=no ${DROPLET2_USER}@${DROPLET2_HOST} << 'ENDSSH'
+set -e
+
+# Navigate to application directory
+cd ${APP_DIR}
+
+# Pull latest code
+echo "📥 Pulling latest code..."
+git pull origin main
+
+# Activate virtual environment
+echo "🐍 Activating virtual environment..."
+source venv/bin/activate
+
+# Install/update dependencies
+echo "📦 Installing dependencies..."
+pip install -r requirements.txt
+
+# Update environment variables
+echo "⚙️  Updating environment variables..."
+cat > .env << 'EOF'
 SECRET_KEY=${SECRET_KEY}
 MONGO_URI=${MONGO_URI}
 DATABASE_NAME=${DATABASE_NAME}
 FLASK_ENV=production
 FLASK_DEBUG=False
 EOF
-                        
-                        # Restart the application
-                        sudo systemctl restart blog-app
-                        
-                        # Wait for app to start
-                        sleep 5
-                        
-                        # Health check
-                        curl -f http://localhost:5000/ || exit 1
-                        
-                        echo 'Deployment successful to Droplet 2!'
-                    """
+
+# Ensure logs directory exists
+mkdir -p logs
+
+# Deactivate venv
+deactivate
+
+# Restart the application
+echo "🔄 Restarting application..."
+sudo systemctl restart blog-app
+
+# Wait for app to start
+echo "⏳ Waiting for application to start..."
+sleep 8
+
+# Health check with retry
+for i in {1..5}; do
+  if curl -f http://localhost:5000/health > /dev/null 2>&1; then
+    echo "✅ Health check passed!"
+    break
+  else
+    echo "Attempt \$i: Health check failed, waiting..."
+    sleep 3
+  fi
+  
+  if [ \$i -eq 5 ]; then
+    echo "❌ Health check failed after 5 attempts"
+    sudo journalctl -u blog-app -n 30
+    exit 1
+  fi
+done
+
+echo "🎉 Deployment successful to Droplet 2!"
+ENDSSH
+                        """
+                    }
                 }
             }
         }
@@ -134,7 +159,7 @@ EOF
                 echo 'Updating Prometheus metrics endpoint...'
                 sh '''
                     # Push deployment metrics to Pushgateway
-                    cat <<EOF | curl --data-binary @- http://prometheus-server:9091/metrics/job/blog-app/instance/droplet2
+                    cat <<EOF | curl --data-binary @- http://prometheus-server:9091/metrics/job/blog-app/instance/droplet2 || true
 # TYPE deployment_info gauge
 deployment_info{version="${BUILD_NUMBER}",environment="production",droplet="droplet2"} 1
 # TYPE deployment_timestamp gauge
@@ -162,7 +187,8 @@ EOF
             emailext(
                 subject: "Jenkins Build Success: ${env.JOB_NAME} - ${env.BUILD_NUMBER}",
                 body: "The build and deployment completed successfully.\nBuild URL: ${env.BUILD_URL}",
-                to: "${env.CHANGE_AUTHOR_EMAIL}"
+                to: "${env.CHANGE_AUTHOR_EMAIL}",
+                recipientProviders: [developers(), requestor()]
             )
         }
         failure {
@@ -170,7 +196,8 @@ EOF
             emailext(
                 subject: "Jenkins Build Failed: ${env.JOB_NAME} - ${env.BUILD_NUMBER}",
                 body: "The build or deployment failed.\nBuild URL: ${env.BUILD_URL}",
-                to: "${env.CHANGE_AUTHOR_EMAIL}"
+                to: "${env.CHANGE_AUTHOR_EMAIL}",
+                recipientProviders: [developers(), requestor()]
             )
         }
     }
