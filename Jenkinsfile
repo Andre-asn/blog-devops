@@ -33,17 +33,34 @@ pipeline {
             }
         }
         
-        stage('Start MongoDB') {
+        stage('Check MongoDB') {
             steps {
-                echo 'Starting MongoDB container for testing...'
+                echo 'Verifying MongoDB is available...'
                 sh '''
-                    docker run -d \
-                        --name mongodb-test-${BUILD_NUMBER} \
-                        -p 27017:27017 \
-                        mongo:7.0
+                    # Check if MongoDB is running locally
+                    if ! pgrep -x mongod > /dev/null; then
+                        echo "⚠️  MongoDB not running locally"
+                        echo "Attempting to start MongoDB..."
+                        
+                        # Try to start with brew (macOS)
+                        if command -v brew > /dev/null; then
+                            brew services start mongodb-community 2>/dev/null || true
+                            sleep 5
+                        fi
+                    fi
                     
-                    # Wait for MongoDB to be ready
-                    sleep 10
+                    # Verify MongoDB connection
+                    if mongosh --eval "db.adminCommand('ping')" > /dev/null 2>&1; then
+                        echo "✅ MongoDB is accessible"
+                    else
+                        echo "❌ MongoDB not accessible"
+                        echo ""
+                        echo "Please install MongoDB:"
+                        echo "  brew tap mongodb/brew"
+                        echo "  brew install mongodb-community"
+                        echo "  brew services start mongodb-community"
+                        exit 1
+                    fi
                 '''
             }
         }
@@ -150,33 +167,16 @@ ENDSSH
                 }
             }
         }
-        
-        stage('Update Prometheus Metrics') {
-            when {
-                branch 'main'
-            }
-            steps {
-                echo 'Updating Prometheus metrics endpoint...'
-                sh '''
-                    # Push deployment metrics to Pushgateway
-                    cat <<EOF | curl --data-binary @- http://prometheus-server:9091/metrics/job/blog-app/instance/droplet2 || true
-# TYPE deployment_info gauge
-deployment_info{version="${BUILD_NUMBER}",environment="production",droplet="droplet2"} 1
-# TYPE deployment_timestamp gauge
-deployment_timestamp $(date +%s)
-EOF
-                '''
-            }
-        }
     }
     
     post {
         always {
             echo 'Cleaning up...'
             sh '''
-                # Stop and remove MongoDB test container
-                docker stop mongodb-test-${BUILD_NUMBER} || true
-                docker rm mongodb-test-${BUILD_NUMBER} || true
+                # Clean up test database if MongoDB is local
+                if mongosh --eval "db.adminCommand('ping')" > /dev/null 2>&1; then
+                    mongosh --eval "db.getSiblingDB('blog_test_db').dropDatabase()" || true
+                fi
                 
                 # Clean up virtual environment
                 rm -rf ${VENV_DIR}
@@ -184,21 +184,10 @@ EOF
         }
         success {
             echo '✅ Pipeline completed successfully!'
-            emailext(
-                subject: "Jenkins Build Success: ${env.JOB_NAME} - ${env.BUILD_NUMBER}",
-                body: "The build and deployment completed successfully.\nBuild URL: ${env.BUILD_URL}",
-                to: "${env.CHANGE_AUTHOR_EMAIL}",
-                recipientProviders: [developers(), requestor()]
-            )
         }
         failure {
             echo '❌ Pipeline failed!'
-            emailext(
-                subject: "Jenkins Build Failed: ${env.JOB_NAME} - ${env.BUILD_NUMBER}",
-                body: "The build or deployment failed.\nBuild URL: ${env.BUILD_URL}",
-                to: "${env.CHANGE_AUTHOR_EMAIL}",
-                recipientProviders: [developers(), requestor()]
-            )
+            echo 'Check the console output above for error details'
         }
     }
 }
