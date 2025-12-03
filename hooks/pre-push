@@ -35,7 +35,7 @@ do
         exit 0
     fi
     
-    echo -e "${YELLOW}⚠️  Pushing to $REMOTE_BRANCH branch - running comprehensive Pylint checks${NC}"
+    echo -e "${YELLOW}⚠️  Pushing to $REMOTE_BRANCH branch - running Pylint checks on changed files${NC}"
     echo ""
     
     # Check Pylint installation
@@ -46,28 +46,386 @@ do
         exit 1
     fi
     
-    # Get all Python files in the repository
-    echo "Finding all Python files in the repository..."
-    PYTHON_FILES=$(find . -type f -name "*.py" \
-        -not -path "./.git/*" \
-        -not -path "./venv/*" \
-        -not -path "./.venv/*" \
-        -not -path "./env/*" \
-        -not -path "./.env/*" \
-        -not -path "./build/*" \
-        -not -path "./dist/*" \
-        -not -path "./.pytest_cache/*" \
-        -not -path "./__pycache__/*" \
-        -not -path "*/__pycache__/*" \
-        2>/dev/null || true)
+    # Get Python files that changed in commits being pushed
+    echo "Finding Python files in commits being pushed..."
+    
+    # If pushing a new branch (remote_sha is all zeros)
+    if [ "$remote_sha" = "0000000000000000000000000000000000000000" ]; then
+        echo "Pushing new branch - checking files in latest commit only..."
+        PYTHON_FILES=$(git diff-tree --no-commit-id --name-only -r HEAD | grep -E '\.py
+    
+    # Temporary directory
+    TEMP_DIR=$(mktemp -d)
+    trap "rm -rf $TEMP_DIR" EXIT
+    
+    ERROR_FILE="$TEMP_DIR/errors.txt"
+    WARNING_FILE="$TEMP_DIR/warnings.txt"
+    SUMMARY_FILE="$TEMP_DIR/summary.txt"
+    
+    # Counters
+    HAS_ERRORS=0
+    TOTAL_FILES=0
+    FILES_WITH_ERRORS=0
+    FILES_WITH_WARNINGS=0
+    FILES_CLEAN=0
+    
+    # Check each file
+    echo "Running Pylint checks..."
+    echo ""
+    
+    for file in $PYTHON_FILES; do
+        if [ ! -f "$file" ]; then
+            continue
+        fi
+        
+        TOTAL_FILES=$((TOTAL_FILES + 1))
+        
+        # Show progress
+        printf "  [%3d/%3d] Checking: %-50s " "$TOTAL_FILES" "$FILE_COUNT" "$file"
+        
+        # CRITICAL: Disable 'exit on error' before running Pylint
+        set +e
+        
+        PYLINT_OUTPUT_FILE="$TEMP_DIR/${file//\//_}.txt"
+        
+        if [ -f ".pylintrc" ]; then
+            pylint --rcfile=.pylintrc "$file" > "$PYLINT_OUTPUT_FILE" 2>&1
+        else
+            pylint "$file" > "$PYLINT_OUTPUT_FILE" 2>&1
+        fi
+        
+        PYLINT_EXIT_CODE=$?
+        
+        # Re-enable 'exit on error'
+        set -e
+        
+        # Use bitwise AND to check for specific error flags
+        HAS_FATAL=$((PYLINT_EXIT_CODE & 1))
+        HAS_ERROR=$((PYLINT_EXIT_CODE & 2))
+        HAS_USAGE_ERROR=$((PYLINT_EXIT_CODE & 32))
+        
+        if [ $PYLINT_EXIT_CODE -eq 0 ]; then
+            echo -e "${GREEN}✓${NC}"
+            FILES_CLEAN=$((FILES_CLEAN + 1))
+        elif [ $HAS_FATAL -ne 0 ] || [ $HAS_ERROR -ne 0 ] || [ $HAS_USAGE_ERROR -ne 0 ]; then
+            echo -e "${RED}✗${NC}"
+            
+            # Save the full output to error file
+            echo "━━━━━ $file ━━━━━" >> "$ERROR_FILE"
+            cat "$PYLINT_OUTPUT_FILE" >> "$ERROR_FILE"
+            echo "" >> "$ERROR_FILE"
+            
+            # Save to summary
+            echo "$file: ERRORS" >> "$SUMMARY_FILE"
+            
+            FILES_WITH_ERRORS=$((FILES_WITH_ERRORS + 1))
+            HAS_ERRORS=1
+        else
+            echo -e "${YELLOW}⚠${NC}"
+            
+            # Save warnings
+            grep -E "^[^:]+:[0-9]+:[0-9]*:? [WRC][0-9]+" "$PYLINT_OUTPUT_FILE" >> "$WARNING_FILE" 2>/dev/null || true
+            
+            # Save to summary
+            echo "$file: warnings" >> "$SUMMARY_FILE"
+            
+            FILES_WITH_WARNINGS=$((FILES_WITH_WARNINGS + 1))
+        fi
+    done
+    
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    
+    # Display results
+    if [ $HAS_ERRORS -eq 1 ]; then
+        echo -e "${RED}❌ PUSH BLOCKED: Pylint found errors in main branch!${NC}"
+        echo ""
+        echo "═══════════════════════════════════════════════════════"
+        echo "  SUMMARY"
+        echo "═══════════════════════════════════════════════════════"
+        echo "  Total files checked:     $TOTAL_FILES"
+        echo "  Files with ERRORS:       $FILES_WITH_ERRORS ❌"
+        echo "  Files with warnings:     $FILES_WITH_WARNINGS ⚠️"
+        echo "  Clean files:             $FILES_CLEAN ✓"
+        echo "═══════════════════════════════════════════════════════"
+        echo ""
+        
+        if [ -f "$SUMMARY_FILE" ] && [ -s "$SUMMARY_FILE" ]; then
+            echo -e "${RED}Files with issues:${NC}"
+            cat "$SUMMARY_FILE" | sed 's/^/  /'
+            echo ""
+        fi
+        
+        if [ -f "$ERROR_FILE" ] && [ -s "$ERROR_FILE" ]; then
+            echo -e "${RED}▼▼▼ Detailed error messages ▼▼▼${NC}"
+            echo ""
+            
+            # Show first 100 lines of errors
+            head -100 "$ERROR_FILE"
+            
+            ERROR_LINES=$(wc -l < "$ERROR_FILE")
+            if [ $ERROR_LINES -gt 100 ]; then
+                echo ""
+                echo "... ($ERROR_LINES lines total, showing first 100)"
+                echo ""
+                echo "To see all errors, run:"
+                echo "  find . -name '*.py' -not -path './venv/*' | xargs pylint"
+            fi
+            echo ""
+        fi
+        
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo ""
+        echo -e "${RED}⛔ Cannot push to main branch with Pylint errors!${NC}"
+        echo ""
+        echo "What to do:"
+        echo "  1. Fix the errors in the files listed above"
+        echo "  2. Run 'pylint <filename>' to see details for each file"
+        echo "  3. Commit your fixes: git commit -am 'Fix Pylint errors'"
+        echo "  4. Try pushing again"
+        echo ""
+        echo "Alternatively:"
+        echo "  • Push to a feature branch first: git push origin HEAD:feature-branch"
+        echo "  • Create a PR for code review before merging to main"
+        echo ""
+        echo "To bypass this check (STRONGLY NOT RECOMMENDED):"
+        echo "  git push --no-verify"
+        echo ""
+        exit 1
+    else
+        echo -e "${GREEN}✅ All Pylint checks passed!${NC}"
+        echo ""
+        echo "═══════════════════════════════════════════════════════"
+        echo "  SUMMARY"
+        echo "═══════════════════════════════════════════════════════"
+        echo "  Total files checked:     $TOTAL_FILES"
+        echo "  Files with errors:       0 ✓"
+        echo "  Files with warnings:     $FILES_WITH_WARNINGS $([ $FILES_WITH_WARNINGS -gt 0 ] && echo '⚠️' || echo '✓')"
+        echo "  Clean files:             $FILES_CLEAN ✓"
+        echo "═══════════════════════════════════════════════════════"
+        echo ""
+        
+        if [ $FILES_WITH_WARNINGS -gt 0 ]; then
+            echo -e "${YELLOW}Note: $FILES_WITH_WARNINGS file(s) have warnings (non-blocking)${NC}"
+            
+            if [ -f "$SUMMARY_FILE" ]; then
+                echo ""
+                echo "Files with warnings:"
+                grep "warnings" "$SUMMARY_FILE" | sed 's/^/  /' || true
+            fi
+            echo ""
+            echo "Consider reviewing warnings before pushing to main."
+        fi
+        
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo ""
+        echo -e "${GREEN}✓ Proceeding with push to $REMOTE_BRANCH...${NC}"
+        echo ""
+        exit 0
+    fi
+done
+
+# If no input was provided, allow the push
+echo -e "${GREEN}✓ No remote branches to check${NC}"
+exit 0
+ || true)
+    else
+        # Get files changed between remote and local
+        echo "Checking files changed between $remote_sha and $local_sha..."
+        PYTHON_FILES=$(git diff --name-only "$remote_sha" "$local_sha" | grep -E '\.py
+    
+    # Temporary directory
+    TEMP_DIR=$(mktemp -d)
+    trap "rm -rf $TEMP_DIR" EXIT
+    
+    ERROR_FILE="$TEMP_DIR/errors.txt"
+    WARNING_FILE="$TEMP_DIR/warnings.txt"
+    SUMMARY_FILE="$TEMP_DIR/summary.txt"
+    
+    # Counters
+    HAS_ERRORS=0
+    TOTAL_FILES=0
+    FILES_WITH_ERRORS=0
+    FILES_WITH_WARNINGS=0
+    FILES_CLEAN=0
+    
+    # Check each file
+    echo "Running Pylint checks..."
+    echo ""
+    
+    for file in $PYTHON_FILES; do
+        if [ ! -f "$file" ]; then
+            continue
+        fi
+        
+        TOTAL_FILES=$((TOTAL_FILES + 1))
+        
+        # Show progress
+        printf "  [%3d/%3d] Checking: %-50s " "$TOTAL_FILES" "$FILE_COUNT" "$file"
+        
+        # CRITICAL: Disable 'exit on error' before running Pylint
+        set +e
+        
+        PYLINT_OUTPUT_FILE="$TEMP_DIR/${file//\//_}.txt"
+        
+        if [ -f ".pylintrc" ]; then
+            pylint --rcfile=.pylintrc "$file" > "$PYLINT_OUTPUT_FILE" 2>&1
+        else
+            pylint "$file" > "$PYLINT_OUTPUT_FILE" 2>&1
+        fi
+        
+        PYLINT_EXIT_CODE=$?
+        
+        # Re-enable 'exit on error'
+        set -e
+        
+        # Use bitwise AND to check for specific error flags
+        HAS_FATAL=$((PYLINT_EXIT_CODE & 1))
+        HAS_ERROR=$((PYLINT_EXIT_CODE & 2))
+        HAS_USAGE_ERROR=$((PYLINT_EXIT_CODE & 32))
+        
+        if [ $PYLINT_EXIT_CODE -eq 0 ]; then
+            echo -e "${GREEN}✓${NC}"
+            FILES_CLEAN=$((FILES_CLEAN + 1))
+        elif [ $HAS_FATAL -ne 0 ] || [ $HAS_ERROR -ne 0 ] || [ $HAS_USAGE_ERROR -ne 0 ]; then
+            echo -e "${RED}✗${NC}"
+            
+            # Save the full output to error file
+            echo "━━━━━ $file ━━━━━" >> "$ERROR_FILE"
+            cat "$PYLINT_OUTPUT_FILE" >> "$ERROR_FILE"
+            echo "" >> "$ERROR_FILE"
+            
+            # Save to summary
+            echo "$file: ERRORS" >> "$SUMMARY_FILE"
+            
+            FILES_WITH_ERRORS=$((FILES_WITH_ERRORS + 1))
+            HAS_ERRORS=1
+        else
+            echo -e "${YELLOW}⚠${NC}"
+            
+            # Save warnings
+            grep -E "^[^:]+:[0-9]+:[0-9]*:? [WRC][0-9]+" "$PYLINT_OUTPUT_FILE" >> "$WARNING_FILE" 2>/dev/null || true
+            
+            # Save to summary
+            echo "$file: warnings" >> "$SUMMARY_FILE"
+            
+            FILES_WITH_WARNINGS=$((FILES_WITH_WARNINGS + 1))
+        fi
+    done
+    
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    
+    # Display results
+    if [ $HAS_ERRORS -eq 1 ]; then
+        echo -e "${RED}❌ PUSH BLOCKED: Pylint found errors in main branch!${NC}"
+        echo ""
+        echo "═══════════════════════════════════════════════════════"
+        echo "  SUMMARY"
+        echo "═══════════════════════════════════════════════════════"
+        echo "  Total files checked:     $TOTAL_FILES"
+        echo "  Files with ERRORS:       $FILES_WITH_ERRORS ❌"
+        echo "  Files with warnings:     $FILES_WITH_WARNINGS ⚠️"
+        echo "  Clean files:             $FILES_CLEAN ✓"
+        echo "═══════════════════════════════════════════════════════"
+        echo ""
+        
+        if [ -f "$SUMMARY_FILE" ] && [ -s "$SUMMARY_FILE" ]; then
+            echo -e "${RED}Files with issues:${NC}"
+            cat "$SUMMARY_FILE" | sed 's/^/  /'
+            echo ""
+        fi
+        
+        if [ -f "$ERROR_FILE" ] && [ -s "$ERROR_FILE" ]; then
+            echo -e "${RED}▼▼▼ Detailed error messages ▼▼▼${NC}"
+            echo ""
+            
+            # Show first 100 lines of errors
+            head -100 "$ERROR_FILE"
+            
+            ERROR_LINES=$(wc -l < "$ERROR_FILE")
+            if [ $ERROR_LINES -gt 100 ]; then
+                echo ""
+                echo "... ($ERROR_LINES lines total, showing first 100)"
+                echo ""
+                echo "To see all errors, run:"
+                echo "  find . -name '*.py' -not -path './venv/*' | xargs pylint"
+            fi
+            echo ""
+        fi
+        
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo ""
+        echo -e "${RED}⛔ Cannot push to main branch with Pylint errors!${NC}"
+        echo ""
+        echo "What to do:"
+        echo "  1. Fix the errors in the files listed above"
+        echo "  2. Run 'pylint <filename>' to see details for each file"
+        echo "  3. Commit your fixes"
+        echo "  4. Try pushing again"
+        echo ""
+        echo "Alternatively:"
+        echo "  • Push to a feature branch first: git push origin HEAD:feature-branch"
+        echo "  • Create a PR for code review before merging to main"
+        echo ""
+        echo "To bypass this check (STRONGLY NOT RECOMMENDED):"
+        echo "  git push --no-verify"
+        echo ""
+        exit 1
+    else
+        echo -e "${GREEN}✅ All Pylint checks passed!${NC}"
+        echo ""
+        echo "═══════════════════════════════════════════════════════"
+        echo "  SUMMARY"
+        echo "═══════════════════════════════════════════════════════"
+        echo "  Total files checked:     $TOTAL_FILES"
+        echo "  Files with errors:       0 ✓"
+        echo "  Files with warnings:     $FILES_WITH_WARNINGS $([ $FILES_WITH_WARNINGS -gt 0 ] && echo '⚠️' || echo '✓')"
+        echo "  Clean files:             $FILES_CLEAN ✓"
+        echo "═══════════════════════════════════════════════════════"
+        echo ""
+        
+        if [ $FILES_WITH_WARNINGS -gt 0 ]; then
+            echo -e "${YELLOW}Note: $FILES_WITH_WARNINGS file(s) have warnings (non-blocking)${NC}"
+            
+            if [ -f "$SUMMARY_FILE" ]; then
+                echo ""
+                echo "Files with warnings:"
+                grep "warnings" "$SUMMARY_FILE" | sed 's/^/  /' || true
+            fi
+            echo ""
+            echo "Consider reviewing warnings before pushing to main."
+        fi
+        
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo ""
+        echo -e "${GREEN}✓ Proceeding with push to $REMOTE_BRANCH...${NC}"
+        echo ""
+        exit 0
+    fi
+done
+
+# If no input was provided, allow the push
+echo -e "${GREEN}✓ No remote branches to check${NC}"
+exit 0
+ || true)
+    fi
     
     if [ -z "$PYTHON_FILES" ]; then
-        echo -e "${GREEN}ℹ️  No Python files found in repository${NC}"
+        echo -e "${GREEN}ℹ️  No Python files changed in commits being pushed${NC}"
+        echo ""
         exit 0
     fi
     
     FILE_COUNT=$(echo "$PYTHON_FILES" | wc -l | tr -d ' ')
-    echo "Found $FILE_COUNT Python file(s) to check"
+    echo "Found $FILE_COUNT Python file(s) changed in commits"
+    echo ""
+    
+    # Show which files will be checked
+    echo "Files to check:"
+    echo "$PYTHON_FILES" | sed 's/^/  • /'
     echo ""
     
     # Temporary directory
