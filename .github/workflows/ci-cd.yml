@@ -1,4 +1,4 @@
-name: CI/CD Pipeline
+name: CI/CD Pipeline - Droplet 1
 
 on:
   push:
@@ -8,8 +8,14 @@ on:
     branches:
       - main
 
+# Cancel in-progress runs of the same workflow
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
+    name: Run Tests
     runs-on: ubuntu-latest
     
     services:
@@ -24,133 +30,393 @@ jobs:
           --health-retries 5
     
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-    
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.11'
-    
-    - name: Cache pip dependencies
-      uses: actions/cache@v3
-      with:
-        path: ~/.cache/pip
-        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
-        restore-keys: |
-          ${{ runner.os }}-pip-
-    
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-    
-    - name: Run tests
-      env:
-        MONGO_URI: mongodb://localhost:27017/
-        SECRET_KEY: test-secret-key-for-ci
-      run: |
-        pytest -v --cov=. --cov-report=xml --cov-report=html
-    
-    - name: Upload coverage reports
-      uses: codecov/codecov-action@v3
-      with:
-        files: ./coverage.xml
-        fail_ci_if_error: false
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      
+      - name: Cache pip dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          echo "Installed packages:"
+          pip list | grep -E "Flask|pymongo|pytest|gunicorn|prometheus"
+      
+      - name: Wait for MongoDB
+        run: |
+          echo "Waiting for MongoDB to be ready..."
+          for i in {1..30}; do
+            if mongosh --eval "db.adminCommand('ping')" > /dev/null 2>&1; then
+              echo "✅ MongoDB is ready"
+              break
+            fi
+            echo "Waiting... ($i/30)"
+            sleep 2
+          done
+          mongosh --eval "db.adminCommand('ping')"
+      
+      - name: Run tests
+        env:
+          MONGO_URI: mongodb://localhost:27017/
+          SECRET_KEY: test-secret-key-for-ci-${{ github.run_number }}
+          FLASK_ENV: testing
+        run: |
+          echo "Running pytest with coverage..."
+          pytest -v \
+            --cov=. \
+            --cov-report=xml \
+            --cov-report=html \
+            --cov-report=term \
+            --tb=short
+          
+          echo ""
+          echo "=== Test Summary ==="
+          echo "✅ Tests completed"
+      
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          files: ./coverage.xml
+          fail_ci_if_error: false
+          verbose: true
+      
+      - name: Upload coverage reports as artifact
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: coverage-report
+          path: htmlcov/
+          retention-days: 30
+      
+      - name: Upload test results
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: test-results
+          path: |
+            test-results.xml
+            htmlcov/
+          retention-days: 30
 
   deploy:
+    name: Deploy to Droplet 1
     needs: test
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-    
-    - name: Setup SSH
-      uses: webfactory/ssh-agent@v0.8.0
-      with:
-        ssh-private-key: ${{ secrets.DIGITALOCEAN_SSH_KEY }}
-    
-    - name: Add server to known hosts
-      run: |
-        mkdir -p ~/.ssh
-        ssh-keyscan -H ${{ secrets.DIGITALOCEAN_HOST }} >> ~/.ssh/known_hosts
-    
-    - name: Deploy to DigitalOcean
-      env:
-        HOST: ${{ secrets.DIGITALOCEAN_HOST }}
-        USER: ${{ secrets.DIGITALOCEAN_USER }}
-        APP_DIR: ${{ secrets.APP_DIRECTORY }}
-      run: |
-        ssh $USER@$HOST << 'ENDSSH'
-          set -e
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup SSH
+        uses: webfactory/ssh-agent@v0.8.0
+        with:
+          ssh-private-key: ${{ secrets.DIGITALOCEAN_SSH_KEY }}
+      
+      - name: Add server to known hosts
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H ${{ secrets.DIGITALOCEAN_HOST }} >> ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+      
+      - name: Test SSH connection
+        env:
+          HOST: ${{ secrets.DIGITALOCEAN_HOST }}
+          USER: ${{ secrets.DIGITALOCEAN_USER }}
+        run: |
+          echo "Testing SSH connection to $HOST..."
+          ssh -o ConnectTimeout=10 $USER@$HOST 'echo "✅ SSH connection successful"'
+      
+      - name: Deploy to DigitalOcean Droplet 1
+        env:
+          HOST: ${{ secrets.DIGITALOCEAN_HOST }}
+          USER: ${{ secrets.DIGITALOCEAN_USER }}
+          APP_DIR: ${{ secrets.APP_DIRECTORY }}
+        run: |
+          echo "=== Starting Deployment to Droplet 1 ==="
+          echo "Host: $HOST"
+          echo "User: $USER"
+          echo "App Directory: $APP_DIR"
+          echo "GitHub Run: #${{ github.run_number }}"
+          echo ""
           
-          # Navigate to application directory
-          cd ${{ secrets.APP_DIRECTORY }}
-          
-          # Pull latest code
-          echo "📥 Pulling latest code..."
-          git pull origin main
-          
-          # Activate virtual environment
-          echo "🐍 Activating virtual environment..."
-          source venv/bin/activate
-          
-          # Install/update dependencies
-          echo "📦 Installing dependencies..."
-          pip install -r requirements.txt
-          
-          # Update environment variables
-          echo "⚙️  Updating environment variables..."
-          cat > .env << 'EOF'
+          ssh -o StrictHostKeyChecking=no \
+              -o ConnectTimeout=10 \
+              $USER@$HOST << 'ENDSSH'
+set -e
+
+echo "=== Deployment Started ==="
+echo "Timestamp: $(date)"
+echo ""
+
+# Navigate to application directory
+cd ${{ secrets.APP_DIRECTORY }}
+echo "✅ In directory: $(pwd)"
+
+# Check current branch
+echo "Current branch: $(git branch --show-current)"
+
+# Stash any local changes
+git stash 2>/dev/null || true
+
+# Pull latest code
+echo ""
+echo "📥 Pulling latest code from main branch..."
+git fetch origin
+git checkout main
+git pull origin main
+
+# Show latest commit
+echo "Latest commit: $(git log -1 --oneline)"
+
+# Activate virtual environment
+echo ""
+echo "🐍 Activating virtual environment..."
+if [ ! -d "venv" ]; then
+    echo "⚠️  Virtual environment not found, creating..."
+    python3 -m venv venv
+fi
+source venv/bin/activate
+
+# Verify activation
+echo "Python: $(which python3)"
+echo "Pip: $(which pip)"
+
+# Install/update dependencies
+echo ""
+echo "📦 Installing/updating dependencies..."
+pip install --upgrade pip
+pip install -r requirements.txt
+
+# Verify critical packages
+echo "Verifying critical packages:"
+pip show Flask pymongo gunicorn prometheus-client | grep -E "Name|Version" || true
+
+# Update environment variables
+echo ""
+echo "⚙️  Updating environment variables..."
+cat > .env << 'EOF'
 SECRET_KEY=${{ secrets.SECRET_KEY }}
 MONGO_URI=${{ secrets.MONGO_URI }}
 DATABASE_NAME=${{ secrets.DATABASE_NAME }}
 FLASK_ENV=production
 FLASK_DEBUG=False
 EOF
+chmod 600 .env
+echo "✅ Environment file updated"
+
+# Ensure logs directory exists
+echo ""
+echo "📝 Setting up logs directory..."
+mkdir -p logs
+chmod 755 logs
+echo "✅ Logs directory ready"
+
+# Deactivate virtual environment
+deactivate
+
+# Pre-deployment checks
+echo ""
+echo "🔍 Pre-deployment checks..."
+
+# Check if systemd service exists
+if ! systemctl list-unit-files | grep -q "blog-app.service"; then
+    echo "❌ blog-app.service not found"
+    echo "Please run the setup script first"
+    exit 1
+fi
+echo "✅ Service file exists"
+
+# Check MongoDB
+if ! systemctl is-active --quiet mongod; then
+    echo "⚠️  MongoDB not running, attempting to start..."
+    sudo systemctl start mongod
+    sleep 3
+fi
+
+if systemctl is-active --quiet mongod; then
+    echo "✅ MongoDB is running"
+else
+    echo "❌ MongoDB failed to start"
+    sudo systemctl status mongod --no-pager
+    exit 1
+fi
+
+# Restart the application
+echo ""
+echo "🔄 Restarting application..."
+sudo systemctl restart blog-app
+
+# Wait for application to start
+echo "⏳ Waiting for application to start (10 seconds)..."
+sleep 10
+
+# Check if service started successfully
+if ! sudo systemctl is-active --quiet blog-app; then
+    echo "❌ Application failed to start"
+    echo ""
+    echo "=== Service Status ==="
+    sudo systemctl status blog-app --no-pager -l || true
+    echo ""
+    echo "=== Recent Logs ==="
+    sudo journalctl -u blog-app -n 30 --no-pager || true
+    exit 1
+fi
+
+echo "✅ Application service is running"
+
+# Health check with retry logic
+echo ""
+echo "🏥 Performing health checks..."
+HEALTH_CHECK_PASSED=false
+
+for i in {1..5}; do
+    echo "Health check attempt $i/5..."
+    
+    if curl -f -s http://localhost:5000/health > /dev/null 2>&1; then
+        HEALTH_RESPONSE=$(curl -s http://localhost:5000/health)
+        echo "✅ Health endpoint responding: $HEALTH_RESPONSE"
+        HEALTH_CHECK_PASSED=true
+        break
+    else
+        if [ $i -lt 5 ]; then
+            echo "⚠️  Health check failed, retrying in 3 seconds..."
+            sleep 3
+        fi
+    fi
+done
+
+if [ "$HEALTH_CHECK_PASSED" = false ]; then
+    echo "❌ Health check failed after 5 attempts"
+    echo ""
+    echo "=== Application Logs ==="
+    sudo journalctl -u blog-app -n 30 --no-pager
+    echo ""
+    echo "=== Error Logs ==="
+    tail -20 logs/error.log 2>/dev/null || echo "No error log found"
+    exit 1
+fi
+
+# Test metrics endpoint
+echo ""
+echo "Testing metrics endpoint..."
+if curl -f -s http://localhost:5000/metrics | grep -q "blog_"; then
+    echo "✅ Metrics endpoint responding with blog metrics"
+else
+    echo "⚠️  Metrics endpoint may have issues (non-critical)"
+fi
+
+# Test main page
+echo ""
+echo "Testing main application page..."
+if curl -f -s http://localhost:5000/ | grep -q "<!DOCTYPE html>"; then
+    echo "✅ Main page responding with HTML"
+else
+    echo "⚠️  Main page may have issues"
+fi
+
+# Show deployment summary
+echo ""
+echo "=== Deployment Summary ==="
+echo "✅ Code updated to latest commit"
+echo "✅ Dependencies installed"
+echo "✅ Environment configured"
+echo "✅ Application restarted"
+echo "✅ All health checks passed"
+echo ""
+echo "🎉 Deployment successful to Droplet 1!"
+echo "Timestamp: $(date)"
+echo "GitHub Run: #${{ github.run_number }}"
+
+ENDSSH
+      
+      - name: Verify deployment
+        env:
+          HOST: ${{ secrets.DIGITALOCEAN_HOST }}
+          USER: ${{ secrets.DIGITALOCEAN_USER }}
+        run: |
+          echo ""
+          echo "=== Final Verification ==="
           
-          # Ensure logs directory exists
-          mkdir -p logs
+          # Test from outside (if droplet has public access)
+          echo "Testing external access..."
           
-          # Deactivate venv
-          deactivate
-          
-          # Restart the application
-          echo "🔄 Restarting application..."
-          sudo systemctl restart blog-app
-          
-          # Wait for app to start
-          echo "⏳ Waiting for application to start..."
-          sleep 8
-          
-          # Health check with retry
-          for i in {1..5}; do
-            if curl -f http://localhost:5000/health > /dev/null 2>&1; then
-              echo "✅ Health check passed!"
-              break
+          ssh $USER@$HOST << 'VERIFY'
+            # Test health endpoint
+            if curl -f -s http://localhost:5000/health > /dev/null; then
+                echo "✅ Health endpoint accessible"
             else
-              echo "Attempt $i: Health check failed, waiting..."
-              sleep 3
+                echo "❌ Health endpoint not accessible"
+                exit 1
             fi
             
-            if [ $i -eq 5 ]; then
-              echo "❌ Health check failed after 5 attempts"
-              sudo journalctl -u blog-app -n 30
-              exit 1
+            # Check service status
+            if systemctl is-active --quiet blog-app; then
+                echo "✅ Application service is active"
+            else
+                echo "❌ Application service is not active"
+                exit 1
             fi
-          done
+            
+            # Check MongoDB status
+            if systemctl is-active --quiet mongod; then
+                echo "✅ MongoDB service is active"
+            else
+                echo "❌ MongoDB service is not active"
+                exit 1
+            fi
+          VERIFY
           
-          echo "🎉 Deployment successful!"
-        ENDSSH
+          echo ""
+          echo "✅ All verification checks passed!"
     
-    - name: Notify deployment status
-      if: always()
-      run: |
-        if [ ${{ job.status }} == 'success' ]; then
-          echo "✅ Deployment successful to DigitalOcean Droplet 1"
-        else
-          echo "❌ Deployment failed"
-          exit 1
-        fi
+    outputs:
+      deployment-status: ${{ job.status }}
+      deployment-time: ${{ steps.deploy.outputs.time }}
+
+  notify:
+    name: Deployment Notification
+    needs: deploy
+    runs-on: ubuntu-latest
+    if: always()
+    
+    steps:
+      - name: Notify deployment status
+        run: |
+          echo "=== Deployment Status ==="
+          echo "Status: ${{ needs.deploy.result }}"
+          echo "GitHub Run: #${{ github.run_number }}"
+          echo "Commit: ${{ github.sha }}"
+          echo "Branch: ${{ github.ref }}"
+          echo "Actor: ${{ github.actor }}"
+          echo ""
+          
+          if [ "${{ needs.deploy.result }}" == "success" ]; then
+            echo "✅ Deployment to Droplet 1 was successful!"
+            echo ""
+            echo "Application URL: http://${{ secrets.DIGITALOCEAN_HOST }}"
+            echo "Health Check: http://${{ secrets.DIGITALOCEAN_HOST }}/health"
+            echo "Metrics: http://${{ secrets.DIGITALOCEAN_HOST }}/metrics"
+          else
+            echo "❌ Deployment to Droplet 1 failed!"
+            echo ""
+            echo "Please check the logs above for details."
+            echo "Common issues:"
+            echo "  - SSH connection problems"
+            echo "  - MongoDB not running"
+            echo "  - Application startup errors"
+            echo "  - Health check failures"
+            exit 1
+          fi
