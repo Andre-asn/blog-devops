@@ -205,186 +205,192 @@ pipeline {
                 
                 script {
                     sshagent(credentials: ['droplet2-ssh-key']) {
+                        // Write the deployment script to a temporary file to avoid heredoc issues
+                        writeFile file: 'deploy_script.sh', text: """#!/bin/bash
+                        set -e
+
+                        echo "=== Starting Deployment ==="
+                        echo "Build Number: ${BUILD_NUMBER}"
+                        echo "Timestamp: \$(date)"
+                        echo ""
+
+                        # Navigate to application directory
+                        cd ${APP_DIR}
+                        echo "✅ In directory: \$(pwd)"
+
+                        # Check current branch
+                        echo "Current branch: \$(git branch --show-current)"
+
+                        # Stash any local changes
+                        git stash 2>/dev/null || true
+
+                        # Pull latest code
+                        echo ""
+                        echo "📥 Pulling latest code from main branch..."
+                        git fetch origin
+                        git checkout main
+                        git pull origin main
+
+                        # Show latest commit
+                        echo "Latest commit: \$(git log -1 --oneline)"
+
+                        # Activate virtual environment
+                        echo ""
+                        echo "🐍 Activating virtual environment..."
+                        if [ ! -d "venv" ]; then
+                            echo "⚠️  Virtual environment not found, creating..."
+                            python3 -m venv venv
+                        fi
+                        source venv/bin/activate
+
+                        # Verify activation
+                        echo "Python: \$(which python3)"
+                        echo "Pip: \$(which pip)"
+
+                        # Install/update dependencies
+                        echo ""
+                        echo "📦 Installing dependencies..."
+                        pip install --upgrade pip
+                        pip install -r requirements.txt
+
+                        # Verify critical packages
+                        echo "Verifying packages:"
+                        pip show Flask pymongo gunicorn prometheus-client | grep -E "Name|Version" || true
+
+                        # Update environment variables
+                        echo ""
+                        echo "⚙️  Updating environment variables..."
+                        cat > .env << 'ENVFILE'
+                        SECRET_KEY=${SECRET_KEY}
+                        MONGO_URI=${MONGO_URI}
+                        DATABASE_NAME=${DATABASE_NAME}
+                        FLASK_ENV=production
+                        FLASK_DEBUG=False
+                        ENVFILE
+                        chmod 600 .env
+                        echo "✅ Environment file updated"
+
+                        # Ensure logs directory exists with correct permissions
+                        echo ""
+                        echo "📝 Setting up logs directory..."
+                        mkdir -p logs
+                        chmod 755 logs
+                        echo "✅ Logs directory ready"
+
+                        # Deactivate virtual environment
+                        deactivate
+
+                        # Check application configuration
+                        echo ""
+                        echo "🔍 Pre-deployment checks..."
+
+                        # Check if systemd service exists
+                        if ! systemctl list-unit-files | grep -q "blog-app.service"; then
+                            echo "❌ blog-app.service not found"
+                            echo "Please run the setup script first"
+                            exit 1
+                        fi
+                        echo "✅ Service file exists"
+
+                        # Check MongoDB
+                        if ! systemctl is-active --quiet mongod; then
+                            echo "⚠️  MongoDB not running, attempting to start..."
+                            sudo systemctl start mongod
+                            sleep 3
+                        fi
+                        echo "✅ MongoDB is running"
+
+                        # Restart the application
+                        echo ""
+                        echo "🔄 Restarting application..."
+                        sudo systemctl restart blog-app
+
+                        # Wait for application to start
+                        echo "⏳ Waiting for application to start (10 seconds)..."
+                        sleep 10
+
+                        # Check if service started successfully
+                        if ! sudo systemctl is-active --quiet blog-app; then
+                            echo "❌ Application failed to start"
+                            echo ""
+                            echo "=== Service Status ==="
+                            sudo systemctl status blog-app --no-pager -l || true
+                            echo ""
+                            echo "=== Recent Logs ==="
+                            sudo journalctl -u blog-app -n 20 --no-pager || true
+                            exit 1
+                        fi
+
+                        echo "✅ Application service is running"
+
+                        # Health check with retry logic
+                        echo ""
+                        echo "🏥 Performing health checks..."
+                        HEALTH_CHECK_PASSED=false
+
+                        for i in 1 2 3 4 5; do
+                            echo "Attempt \$i/5..."
+                            
+                            # Test health endpoint
+                            if curl -f -s http://localhost:5000/health > /dev/null 2>&1; then
+                                echo "✅ Health endpoint responding"
+                                HEALTH_CHECK_PASSED=true
+                                break
+                            else
+                                if [ \$i -lt 5 ]; then
+                                    echo "⚠️  Health check failed, retrying in 3 seconds..."
+                                    sleep 3
+                                fi
+                            fi
+                        done
+
+                        if [ "\$HEALTH_CHECK_PASSED" = false ]; then
+                            echo "❌ Health check failed after 5 attempts"
+                            echo ""
+                            echo "=== Application Logs ==="
+                            sudo journalctl -u blog-app -n 30 --no-pager
+                            echo ""
+                            echo "=== Error Logs ==="
+                            tail -20 logs/error.log 2>/dev/null || echo "No error log found"
+                            exit 1
+                        fi
+
+                        # Test metrics endpoint
+                        echo ""
+                        echo "Testing metrics endpoint..."
+                        if curl -f -s http://localhost:5000/metrics | grep -q "blog_"; then
+                            echo "✅ Metrics endpoint responding"
+                        else
+                            echo "⚠️  Metrics endpoint may have issues (non-critical)"
+                        fi
+
+                        # Test main page
+                        echo ""
+                        echo "Testing main application..."
+                        if curl -f -s http://localhost:5000/ | grep -q "<!DOCTYPE html>"; then
+                            echo "✅ Main page responding"
+                        else
+                            echo "⚠️  Main page may have issues"
+                        fi
+
+                        # Show deployment summary
+                        echo ""
+                        echo "=== Deployment Summary ==="
+                        echo "✅ Code updated to latest commit"
+                        echo "✅ Dependencies installed"
+                        echo "✅ Environment configured"
+                        echo "✅ Application restarted"
+                        echo "✅ Health checks passed"
+                        echo ""
+                        echo "🎉 Deployment successful to Droplet 2!"
+                        echo "Timestamp: \$(date)"
+                        """
+                        
+                        // Execute the deployment
                         sh """
                             echo "Connecting to ${DROPLET2_HOST}..."
-                            
-                            ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 ${DROPLET2_USER}@${DROPLET2_HOST} 'bash -s' <<'ENDSSH'
-                            set -e
-
-                            echo "=== Starting Deployment ==="
-                            echo "Build Number: ${BUILD_NUMBER}"
-                            echo "Timestamp: \$(date)"
-                            echo ""
-
-                            # Navigate to application directory
-                            cd ${APP_DIR}
-                            echo "✅ In directory: \$(pwd)"
-
-                            # Check current branch
-                            echo "Current branch: \$(git branch --show-current)"
-
-                            # Stash any local changes
-                            git stash 2>/dev/null || true
-
-                            # Pull latest code
-                            echo ""
-                            echo "📥 Pulling latest code from main branch..."
-                            git fetch origin
-                            git checkout main
-                            git pull origin main
-
-                            # Show latest commit
-                            echo "Latest commit: \$(git log -1 --oneline)"
-
-                            # Activate virtual environment
-                            echo ""
-                            echo "🐍 Activating virtual environment..."
-                            if [ ! -d "venv" ]; then
-                                echo "⚠️  Virtual environment not found, creating..."
-                                python3 -m venv venv
-                            fi
-                            source venv/bin/activate
-
-                            # Verify activation
-                            echo "Python: \$(which python3)"
-                            echo "Pip: \$(which pip)"
-
-                            # Install/update dependencies
-                            echo ""
-                            echo "📦 Installing dependencies..."
-                            pip install --upgrade pip
-                            pip install -r requirements.txt
-
-                            # Verify critical packages
-                            echo "Verifying packages:"
-                            pip show Flask pymongo gunicorn prometheus-client | grep -E "Name|Version" || true
-
-                            # Update environment variables using echo statements
-                            echo ""
-                            echo "⚙️  Updating environment variables..."
-                            echo "SECRET_KEY=${SECRET_KEY}" > .env
-                            echo "MONGO_URI=${MONGO_URI}" >> .env
-                            echo "DATABASE_NAME=${DATABASE_NAME}" >> .env
-                            echo "FLASK_ENV=production" >> .env
-                            echo "FLASK_DEBUG=False" >> .env
-                            chmod 600 .env
-                            echo "✅ Environment file updated"
-
-                            # Ensure logs directory exists with correct permissions
-                            echo ""
-                            echo "📝 Setting up logs directory..."
-                            mkdir -p logs
-                            chmod 755 logs
-                            echo "✅ Logs directory ready"
-
-                            # Deactivate virtual environment
-                            deactivate
-
-                            # Check application configuration
-                            echo ""
-                            echo "🔍 Pre-deployment checks..."
-
-                            # Check if systemd service exists
-                            if ! systemctl list-unit-files | grep -q "blog-app.service"; then
-                                echo "❌ blog-app.service not found"
-                                echo "Please run the setup script first"
-                                exit 1
-                            fi
-                            echo "✅ Service file exists"
-
-                            # Check MongoDB
-                            if ! systemctl is-active --quiet mongod; then
-                                echo "⚠️  MongoDB not running, attempting to start..."
-                                sudo systemctl start mongod
-                                sleep 3
-                            fi
-                            echo "✅ MongoDB is running"
-
-                            # Restart the application
-                            echo ""
-                            echo "🔄 Restarting application..."
-                            sudo systemctl restart blog-app
-
-                            # Wait for application to start
-                            echo "⏳ Waiting for application to start (10 seconds)..."
-                            sleep 10
-
-                            # Check if service started successfully
-                            if ! sudo systemctl is-active --quiet blog-app; then
-                                echo "❌ Application failed to start"
-                                echo ""
-                                echo "=== Service Status ==="
-                                sudo systemctl status blog-app --no-pager -l || true
-                                echo ""
-                                echo "=== Recent Logs ==="
-                                sudo journalctl -u blog-app -n 20 --no-pager || true
-                                exit 1
-                            fi
-
-                            echo "✅ Application service is running"
-
-                            # Health check with retry logic
-                            echo ""
-                            echo "🏥 Performing health checks..."
-                            HEALTH_CHECK_PASSED=false
-
-                            for i in 1 2 3 4 5; do
-                                echo "Attempt \$i/5..."
-                                
-                                # Test health endpoint
-                                if curl -f -s http://localhost:5000/health > /dev/null 2>&1; then
-                                    echo "✅ Health endpoint responding"
-                                    HEALTH_CHECK_PASSED=true
-                                    break
-                                else
-                                    if [ \$i -lt 5 ]; then
-                                        echo "⚠️  Health check failed, retrying in 3 seconds..."
-                                        sleep 3
-                                    fi
-                                fi
-                            done
-
-                            if [ "\$HEALTH_CHECK_PASSED" = false ]; then
-                                echo "❌ Health check failed after 5 attempts"
-                                echo ""
-                                echo "=== Application Logs ==="
-                                sudo journalctl -u blog-app -n 30 --no-pager
-                                echo ""
-                                echo "=== Error Logs ==="
-                                tail -20 logs/error.log 2>/dev/null || echo "No error log found"
-                                exit 1
-                            fi
-
-                            # Test metrics endpoint
-                            echo ""
-                            echo "Testing metrics endpoint..."
-                            if curl -f -s http://localhost:5000/metrics | grep -q "blog_"; then
-                                echo "✅ Metrics endpoint responding"
-                            else
-                                echo "⚠️  Metrics endpoint may have issues (non-critical)"
-                            fi
-
-                            # Test main page
-                            echo ""
-                            echo "Testing main application..."
-                            if curl -f -s http://localhost:5000/ | grep -q "<!DOCTYPE html>"; then
-                                echo "✅ Main page responding"
-                            else
-                                echo "⚠️  Main page may have issues"
-                            fi
-
-                            # Show deployment summary
-                            echo ""
-                            echo "=== Deployment Summary ==="
-                            echo "✅ Code updated to latest commit"
-                            echo "✅ Dependencies installed"
-                            echo "✅ Environment configured"
-                            echo "✅ Application restarted"
-                            echo "✅ Health checks passed"
-                            echo ""
-                            echo "🎉 Deployment successful to Droplet 2!"
-                            echo "Timestamp: \$(date)"
-                            ENDSSH
+                            cat deploy_script.sh | ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 ${DROPLET2_USER}@${DROPLET2_HOST} 'bash -s'
+                            rm -f deploy_script.sh
                         """
                     }
                 }
@@ -409,6 +415,9 @@ pipeline {
                 # Clean up virtual environment
                 echo "Removing virtual environment..."
                 rm -rf ${VENV_DIR}
+                
+                # Clean up any leftover deploy script
+                rm -f deploy_script.sh
                 
                 echo "✅ Cleanup complete"
             '''
