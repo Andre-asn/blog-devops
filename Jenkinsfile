@@ -19,12 +19,17 @@ pipeline {
         
         // GitHub credentials for pushing documentation
         GITHUB_TOKEN = credentials('github-token')
+        GITHUB_REPO = 'Andre-asn/blog-devops'
         
         // Add Homebrew paths for MongoDB (macOS)
         PATH = "/opt/homebrew/bin:/usr/local/bin:${env.PATH}"
         
         // Documentation directory
         DOC_DIR = 'documentations/jenkins-doc'
+        
+        // Retry configuration
+        MAX_RETRIES = '5'
+        RETRY_DELAY = '10'
     }
     
     stages {
@@ -206,6 +211,49 @@ pipeline {
             }
         }
         
+        stage('Sync with Remote Before Documentation') {
+            steps {
+                echo '🔄 Syncing with remote repository before documentation generation...'
+                sh '''
+                    echo "=== Pulling Latest Changes from Remote ==="
+                    
+                    # Configure git
+                    git config user.email "jenkins@ci.local"
+                    git config user.name "Jenkins CI"
+                    
+                    # Fetch latest
+                    echo "Fetching from origin..."
+                    git fetch origin main
+                    
+                    # Check current status
+                    LOCAL_COMMIT=$(git rev-parse HEAD)
+                    REMOTE_COMMIT=$(git rev-parse origin/main)
+                    
+                    echo "Local commit:  $LOCAL_COMMIT"
+                    echo "Remote commit: $REMOTE_COMMIT"
+                    
+                    # Pull if behind
+                    if [ "$LOCAL_COMMIT" != "$REMOTE_COMMIT" ]; then
+                        BEHIND=$(git rev-list HEAD..origin/main --count)
+                        echo "⚠️  Local is $BEHIND commit(s) behind remote"
+                        echo "Pulling latest changes..."
+                        
+                        git pull origin main --rebase --autostash || {
+                            echo "⚠️  Pull had issues, attempting to resolve..."
+                            git rebase --abort 2>/dev/null || true
+                            git reset --hard origin/main
+                        }
+                        
+                        echo "✅ Successfully synced with remote"
+                    else
+                        echo "✅ Already up to date"
+                    fi
+                    
+                    echo "Final commit: $(git rev-parse HEAD)"
+                '''
+            }
+        }
+        
         stage('Generate Pyreverse Documentation') {
             steps {
                 echo '📚 Generating Pyreverse UML documentation...'
@@ -360,17 +408,66 @@ DOCREADME
         
         stage('Commit Documentation to GitHub') {
             steps {
-                echo '📤 Committing documentation to GitHub...'
+                echo '📤 Committing documentation to GitHub with retry logic...'
                 sh '''
-                    # Configure git
-                    git config user.email "jenkins@ci.local"
-                    git config user.name "Jenkins CI"
+                    echo "=== Committing Documentation with Retry Logic ==="
                     
-                    # Check if there are changes to commit
-                    if [ -d "${DOC_DIR}" ] && [ "$(ls -A ${DOC_DIR})" ]; then
-                        echo "Documentation files found:"
-                        ls -la ${DOC_DIR}/ | sed 's/^/  /'
+                    # Function to attempt commit and push
+                    attempt_push() {
+                        local attempt=$1
                         echo ""
+                        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                        echo "Attempt $attempt of ${MAX_RETRIES}"
+                        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                        
+                        # Fetch latest changes
+                        echo "Fetching latest from origin/main..."
+                        git fetch origin main
+                        
+                        # Get current status
+                        LOCAL_COMMIT=$(git rev-parse HEAD)
+                        REMOTE_COMMIT=$(git rev-parse origin/main)
+                        
+                        echo "Local commit:  $LOCAL_COMMIT"
+                        echo "Remote commit: $REMOTE_COMMIT"
+                        
+                        # Check if we're behind
+                        if [ "$LOCAL_COMMIT" != "$REMOTE_COMMIT" ]; then
+                            BEHIND=$(git rev-list HEAD..origin/main --count)
+                            echo "⚠️  Local is $BEHIND commit(s) behind remote"
+                            
+                            echo "Rebasing onto origin/main..."
+                            if git rebase origin/main; then
+                                echo "✅ Rebase successful"
+                            else
+                                echo "⚠️  Rebase had conflicts, attempting to resolve..."
+                                
+                                # Check if conflicts are in our documentation path
+                                CONFLICTS=$(git diff --name-only --diff-filter=U 2>/dev/null || echo "")
+                                echo "Conflicts in: $CONFLICTS"
+                                
+                                if echo "$CONFLICTS" | grep -q "documentations/jenkins-doc/"; then
+                                    echo "Conflict in jenkins-doc, using our version..."
+                                    git checkout --ours documentations/jenkins-doc/
+                                    git add documentations/jenkins-doc/
+                                    git rebase --continue || {
+                                        git rebase --skip 2>/dev/null || true
+                                    }
+                                else
+                                    echo "Conflicts outside our documentation path, aborting rebase..."
+                                    git rebase --abort
+                                    return 1
+                                fi
+                            fi
+                        else
+                            echo "✅ Already up to date with remote"
+                        fi
+                        
+                        # Check if documentation files exist and were modified
+                        if [ ! -d "${DOC_DIR}" ] || [ ! "$(ls -A ${DOC_DIR})" ]; then
+                            echo "⚠️  No documentation files found to commit"
+                            return 0
+                        fi
                         
                         # Add documentation files
                         git add ${DOC_DIR}/
@@ -378,25 +475,63 @@ DOCREADME
                         # Check if there are staged changes
                         if git diff --cached --quiet; then
                             echo "ℹ️  No changes to documentation - skipping commit"
-                        else
-                            echo "Committing documentation changes..."
-                            git commit -m "docs(jenkins): Update Pyreverse UML documentation [Build #${BUILD_NUMBER}]
-
-Generated by Jenkins Pipeline
-- Class diagrams
-- Package diagrams
-- PNG and SVG formats
-
-[skip ci]"
-                            
-                            # Push to repository
-                            echo "Pushing to repository..."
-                            git push https://${GITHUB_TOKEN}@github.com/Andre-asn/blog-devops.git HEAD:main
-                            
-                            echo "✅ Documentation committed and pushed successfully"
+                            return 0
                         fi
+                        
+                        # Commit changes
+                        echo "Committing documentation changes..."
+                        git commit -m "docs(jenkins): Update Pyreverse UML documentation [Build #${BUILD_NUMBER}]
+
+                        Generated by Jenkins Pipeline
+                        - Class diagrams
+                        - Package diagrams
+                        - PNG and SVG formats
+
+                        [skip ci]"
+                        
+                        # Push to repository
+                        echo "Pushing to repository..."
+                        if git push https://${GITHUB_TOKEN}@github.com/${GITHUB_REPO}.git HEAD:main; then
+                            echo "✅ Successfully pushed documentation"
+                            return 0
+                        else
+                            echo "❌ Push failed"
+                            return 1
+                        fi
+                    }
+                    
+                    # Configure git
+                    git config user.email "jenkins@ci.local"
+                    git config user.name "Jenkins CI"
+                    
+                    # Retry loop
+                    SUCCESS=false
+                    for i in $(seq 1 ${MAX_RETRIES}); do
+                        if attempt_push $i; then
+                            SUCCESS=true
+                            break
+                        else
+                            if [ $i -lt ${MAX_RETRIES} ]; then
+                                echo ""
+                                echo "⏳ Waiting ${RETRY_DELAY} seconds before retry..."
+                                sleep ${RETRY_DELAY}
+                            fi
+                        fi
+                    done
+                    
+                    if [ "$SUCCESS" = true ]; then
+                        echo ""
+                        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                        echo "✅ Documentation successfully committed and pushed"
+                        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
                     else
-                        echo "⚠️  No documentation files found to commit"
+                        echo ""
+                        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                        echo "⚠️  Failed to push documentation after ${MAX_RETRIES} attempts"
+                        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                        echo ""
+                        echo "This is not critical - continuing with deployment"
+                        echo "Documentation can be manually committed later if needed"
                     fi
                 '''
             }
@@ -652,6 +787,7 @@ echo "Timestamp: \$(date)"
             echo '  - MongoDB not running: brew services start mongodb-community'
             echo '  - Tests failing: Check test output in "Run Tests" stage'
             echo '  - Deployment failing: Check SSH connection and credentials'
+            echo '  - Documentation push failing: Check GITHUB_TOKEN credential'
         }
         unstable {
             echo '⚠️  Pipeline completed with warnings'
