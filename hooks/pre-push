@@ -1,5 +1,6 @@
 #!/bin/bash
 # Pre-push hook for Pylint checking before pushing to main branch
+# AND triggering Jenkins pipeline after successful push
 # This file is version-controlled in hooks/pre-push
 # Install with: ./hooks/install-hooks.sh
 
@@ -13,6 +14,108 @@ GREEN='\033[0;32m'
 BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 NC='\033[0m'
+
+#===============================================================================
+# JENKINS CONFIGURATION - UPDATE THESE VALUES
+#===============================================================================
+JENKINS_URL="http://localhost:8080"
+JENKINS_USER="your-jenkins-username"
+JENKINS_TOKEN="your-jenkins-api-token"
+JENKINS_JOB="blog-app-pipeline"
+TRIGGER_JENKINS_ON_BRANCH="main"
+#===============================================================================
+
+trigger_jenkins_pipeline() {
+    local branch="$1"
+    
+    # Only trigger for the specified branch
+    if [ "$branch" != "$TRIGGER_JENKINS_ON_BRANCH" ]; then
+        return 0
+    fi
+    
+    # Run Jenkins trigger in background so it doesn't block the push completion message
+    (
+        # Small delay to ensure push completes
+        sleep 2
+        
+        echo ""
+        echo -e "${BLUE}========================================${NC}"
+        echo -e "${BLUE}       TRIGGERING JENKINS PIPELINE      ${NC}"
+        echo -e "${BLUE}========================================${NC}"
+        echo ""
+        
+        # Check if Jenkins is reachable
+        echo -e "🔍 Checking Jenkins availability at ${JENKINS_URL}..."
+        
+        HEALTH_CHECK=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 5 "${JENKINS_URL}" 2>/dev/null || echo "000")
+        
+        if [ "$HEALTH_CHECK" = "000" ]; then
+            echo -e "${RED}❌ Jenkins is not reachable at ${JENKINS_URL}${NC}"
+            echo -e "${YELLOW}⚠️  Push succeeded, but Jenkins trigger failed${NC}"
+            echo -e "${YELLOW}   Please ensure Jenkins is running and trigger manually if needed${NC}"
+            echo ""
+            return 0
+        fi
+        
+        echo -e "${GREEN}✅ Jenkins is reachable${NC}"
+        echo ""
+        
+        # Trigger the Jenkins pipeline
+        echo -e "🚀 Triggering Jenkins job: ${YELLOW}${JENKINS_JOB}${NC}"
+        
+        TRIGGER_URL="${JENKINS_URL}/job/${JENKINS_JOB}/build"
+        
+        HTTP_RESPONSE=$(curl -s -o /tmp/jenkins_trigger_response.txt -w "%{http_code}" \
+            -X POST \
+            -u "${JENKINS_USER}:${JENKINS_TOKEN}" \
+            "${TRIGGER_URL}" 2>/dev/null || echo "000")
+        
+        echo ""
+        
+        if [ "$HTTP_RESPONSE" = "201" ] || [ "$HTTP_RESPONSE" = "200" ]; then
+            echo -e "${GREEN}========================================${NC}"
+            echo -e "${GREEN}✅ Jenkins pipeline triggered successfully!${NC}"
+            echo -e "${GREEN}========================================${NC}"
+            echo ""
+            echo -e "📊 View build at: ${BLUE}${JENKINS_URL}/job/${JENKINS_JOB}/${NC}"
+            echo ""
+        elif [ "$HTTP_RESPONSE" = "401" ]; then
+            echo -e "${RED}❌ Jenkins authentication failed (401)${NC}"
+            echo -e "${YELLOW}⚠️  Please check JENKINS_USER and JENKINS_TOKEN in the hook${NC}"
+            echo ""
+        elif [ "$HTTP_RESPONSE" = "403" ]; then
+            echo -e "${RED}❌ Jenkins permission denied (403)${NC}"
+            echo -e "${YELLOW}⚠️  User may not have permission to trigger this job${NC}"
+            echo ""
+        elif [ "$HTTP_RESPONSE" = "404" ]; then
+            echo -e "${RED}❌ Jenkins job not found (404)${NC}"
+            echo -e "${YELLOW}⚠️  Please check JENKINS_JOB name: ${JENKINS_JOB}${NC}"
+            echo ""
+        elif [ "$HTTP_RESPONSE" = "000" ]; then
+            echo -e "${RED}❌ Could not connect to Jenkins${NC}"
+            echo -e "${YELLOW}⚠️  Push succeeded, but Jenkins trigger failed${NC}"
+            echo ""
+        else
+            echo -e "${RED}❌ Failed to trigger Jenkins pipeline${NC}"
+            echo -e "${YELLOW}⚠️  HTTP Response Code: ${HTTP_RESPONSE}${NC}"
+            if [ -f /tmp/jenkins_trigger_response.txt ]; then
+                echo -e "${YELLOW}⚠️  Response: $(cat /tmp/jenkins_trigger_response.txt)${NC}"
+            fi
+            echo ""
+        fi
+        
+        # Cleanup
+        rm -f /tmp/jenkins_trigger_response.txt
+        
+    ) &
+    
+    # Don't wait for background process - let it run independently
+    disown 2>/dev/null || true
+}
+
+#===============================================================================
+# MAIN PRE-PUSH HOOK LOGIC (EXISTING PYLINT FUNCTIONALITY)
+#===============================================================================
 
 # Read standard input (includes: local_ref local_sha remote_ref remote_sha)
 while read local_ref local_sha remote_ref remote_sha
@@ -52,369 +155,20 @@ do
     # If pushing a new branch (remote_sha is all zeros)
     if [ "$remote_sha" = "0000000000000000000000000000000000000000" ]; then
         echo "Pushing new branch - checking files in latest commit only..."
-        PYTHON_FILES=$(git diff-tree --no-commit-id --name-only -r HEAD | grep -E '\.py
-    
-    # Temporary directory
-    TEMP_DIR=$(mktemp -d)
-    trap "rm -rf $TEMP_DIR" EXIT
-    
-    ERROR_FILE="$TEMP_DIR/errors.txt"
-    WARNING_FILE="$TEMP_DIR/warnings.txt"
-    SUMMARY_FILE="$TEMP_DIR/summary.txt"
-    
-    # Counters
-    HAS_ERRORS=0
-    TOTAL_FILES=0
-    FILES_WITH_ERRORS=0
-    FILES_WITH_WARNINGS=0
-    FILES_CLEAN=0
-    
-    # Check each file
-    echo "Running Pylint checks..."
-    echo ""
-    
-    for file in $PYTHON_FILES; do
-        if [ ! -f "$file" ]; then
-            continue
-        fi
-        
-        TOTAL_FILES=$((TOTAL_FILES + 1))
-        
-        # Show progress
-        printf "  [%3d/%3d] Checking: %-50s " "$TOTAL_FILES" "$FILE_COUNT" "$file"
-        
-        # CRITICAL: Disable 'exit on error' before running Pylint
-        set +e
-        
-        PYLINT_OUTPUT_FILE="$TEMP_DIR/${file//\//_}.txt"
-        
-        if [ -f ".pylintrc" ]; then
-            pylint --rcfile=.pylintrc "$file" > "$PYLINT_OUTPUT_FILE" 2>&1
-        else
-            pylint "$file" > "$PYLINT_OUTPUT_FILE" 2>&1
-        fi
-        
-        PYLINT_EXIT_CODE=$?
-        
-        # Re-enable 'exit on error'
-        set -e
-        
-        # Use bitwise AND to check for specific error flags
-        HAS_FATAL=$((PYLINT_EXIT_CODE & 1))
-        HAS_ERROR=$((PYLINT_EXIT_CODE & 2))
-        HAS_USAGE_ERROR=$((PYLINT_EXIT_CODE & 32))
-        
-        if [ $PYLINT_EXIT_CODE -eq 0 ]; then
-            echo -e "${GREEN}✓${NC}"
-            FILES_CLEAN=$((FILES_CLEAN + 1))
-        elif [ $HAS_FATAL -ne 0 ] || [ $HAS_ERROR -ne 0 ] || [ $HAS_USAGE_ERROR -ne 0 ]; then
-            echo -e "${RED}✗${NC}"
-            
-            # Save the full output to error file
-            echo "━━━━━ $file ━━━━━" >> "$ERROR_FILE"
-            cat "$PYLINT_OUTPUT_FILE" >> "$ERROR_FILE"
-            echo "" >> "$ERROR_FILE"
-            
-            # Save to summary
-            echo "$file: ERRORS" >> "$SUMMARY_FILE"
-            
-            FILES_WITH_ERRORS=$((FILES_WITH_ERRORS + 1))
-            HAS_ERRORS=1
-        else
-            echo -e "${YELLOW}⚠${NC}"
-            
-            # Save warnings
-            grep -E "^[^:]+:[0-9]+:[0-9]*:? [WRC][0-9]+" "$PYLINT_OUTPUT_FILE" >> "$WARNING_FILE" 2>/dev/null || true
-            
-            # Save to summary
-            echo "$file: warnings" >> "$SUMMARY_FILE"
-            
-            FILES_WITH_WARNINGS=$((FILES_WITH_WARNINGS + 1))
-        fi
-    done
-    
-    echo ""
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo ""
-    
-    # Display results
-    if [ $HAS_ERRORS -eq 1 ]; then
-        echo -e "${RED}❌ PUSH BLOCKED: Pylint found errors in main branch!${NC}"
-        echo ""
-        echo "═══════════════════════════════════════════════════════"
-        echo "  SUMMARY"
-        echo "═══════════════════════════════════════════════════════"
-        echo "  Total files checked:     $TOTAL_FILES"
-        echo "  Files with ERRORS:       $FILES_WITH_ERRORS ❌"
-        echo "  Files with warnings:     $FILES_WITH_WARNINGS ⚠️"
-        echo "  Clean files:             $FILES_CLEAN ✓"
-        echo "═══════════════════════════════════════════════════════"
-        echo ""
-        
-        if [ -f "$SUMMARY_FILE" ] && [ -s "$SUMMARY_FILE" ]; then
-            echo -e "${RED}Files with issues:${NC}"
-            cat "$SUMMARY_FILE" | sed 's/^/  /'
-            echo ""
-        fi
-        
-        if [ -f "$ERROR_FILE" ] && [ -s "$ERROR_FILE" ]; then
-            echo -e "${RED}▼▼▼ Detailed error messages ▼▼▼${NC}"
-            echo ""
-            
-            # Show first 100 lines of errors
-            head -100 "$ERROR_FILE"
-            
-            ERROR_LINES=$(wc -l < "$ERROR_FILE")
-            if [ $ERROR_LINES -gt 100 ]; then
-                echo ""
-                echo "... ($ERROR_LINES lines total, showing first 100)"
-                echo ""
-                echo "To see all errors, run:"
-                echo "  find . -name '*.py' -not -path './venv/*' | xargs pylint"
-            fi
-            echo ""
-        fi
-        
-        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        echo ""
-        echo -e "${RED}⛔ Cannot push to main branch with Pylint errors!${NC}"
-        echo ""
-        echo "What to do:"
-        echo "  1. Fix the errors in the files listed above"
-        echo "  2. Run 'pylint <filename>' to see details for each file"
-        echo "  3. Commit your fixes: git commit -am 'Fix Pylint errors'"
-        echo "  4. Try pushing again"
-        echo ""
-        echo "Alternatively:"
-        echo "  • Push to a feature branch first: git push origin HEAD:feature-branch"
-        echo "  • Create a PR for code review before merging to main"
-        echo ""
-        echo "To bypass this check (STRONGLY NOT RECOMMENDED):"
-        echo "  git push --no-verify"
-        echo ""
-        exit 1
-    else
-        echo -e "${GREEN}✅ All Pylint checks passed!${NC}"
-        echo ""
-        echo "═══════════════════════════════════════════════════════"
-        echo "  SUMMARY"
-        echo "═══════════════════════════════════════════════════════"
-        echo "  Total files checked:     $TOTAL_FILES"
-        echo "  Files with errors:       0 ✓"
-        echo "  Files with warnings:     $FILES_WITH_WARNINGS $([ $FILES_WITH_WARNINGS -gt 0 ] && echo '⚠️' || echo '✓')"
-        echo "  Clean files:             $FILES_CLEAN ✓"
-        echo "═══════════════════════════════════════════════════════"
-        echo ""
-        
-        if [ $FILES_WITH_WARNINGS -gt 0 ]; then
-            echo -e "${YELLOW}Note: $FILES_WITH_WARNINGS file(s) have warnings (non-blocking)${NC}"
-            
-            if [ -f "$SUMMARY_FILE" ]; then
-                echo ""
-                echo "Files with warnings:"
-                grep "warnings" "$SUMMARY_FILE" | sed 's/^/  /' || true
-            fi
-            echo ""
-            echo "Consider reviewing warnings before pushing to main."
-        fi
-        
-        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        echo ""
-        echo -e "${GREEN}✓ Proceeding with push to $REMOTE_BRANCH...${NC}"
-        echo ""
-        exit 0
-    fi
-done
-
-# If no input was provided, allow the push
-echo -e "${GREEN}✓ No remote branches to check${NC}"
-exit 0
- || true)
+        PYTHON_FILES=$(git diff-tree --no-commit-id --name-only -r HEAD | grep -E '\.py$' || true)
     else
         # Get files changed between remote and local
         echo "Checking files changed between $remote_sha and $local_sha..."
-        PYTHON_FILES=$(git diff --name-only "$remote_sha" "$local_sha" | grep -E '\.py
-    
-    # Temporary directory
-    TEMP_DIR=$(mktemp -d)
-    trap "rm -rf $TEMP_DIR" EXIT
-    
-    ERROR_FILE="$TEMP_DIR/errors.txt"
-    WARNING_FILE="$TEMP_DIR/warnings.txt"
-    SUMMARY_FILE="$TEMP_DIR/summary.txt"
-    
-    # Counters
-    HAS_ERRORS=0
-    TOTAL_FILES=0
-    FILES_WITH_ERRORS=0
-    FILES_WITH_WARNINGS=0
-    FILES_CLEAN=0
-    
-    # Check each file
-    echo "Running Pylint checks..."
-    echo ""
-    
-    for file in $PYTHON_FILES; do
-        if [ ! -f "$file" ]; then
-            continue
-        fi
-        
-        TOTAL_FILES=$((TOTAL_FILES + 1))
-        
-        # Show progress
-        printf "  [%3d/%3d] Checking: %-50s " "$TOTAL_FILES" "$FILE_COUNT" "$file"
-        
-        # CRITICAL: Disable 'exit on error' before running Pylint
-        set +e
-        
-        PYLINT_OUTPUT_FILE="$TEMP_DIR/${file//\//_}.txt"
-        
-        if [ -f ".pylintrc" ]; then
-            pylint --rcfile=.pylintrc "$file" > "$PYLINT_OUTPUT_FILE" 2>&1
-        else
-            pylint "$file" > "$PYLINT_OUTPUT_FILE" 2>&1
-        fi
-        
-        PYLINT_EXIT_CODE=$?
-        
-        # Re-enable 'exit on error'
-        set -e
-        
-        # Use bitwise AND to check for specific error flags
-        HAS_FATAL=$((PYLINT_EXIT_CODE & 1))
-        HAS_ERROR=$((PYLINT_EXIT_CODE & 2))
-        HAS_USAGE_ERROR=$((PYLINT_EXIT_CODE & 32))
-        
-        if [ $PYLINT_EXIT_CODE -eq 0 ]; then
-            echo -e "${GREEN}✓${NC}"
-            FILES_CLEAN=$((FILES_CLEAN + 1))
-        elif [ $HAS_FATAL -ne 0 ] || [ $HAS_ERROR -ne 0 ] || [ $HAS_USAGE_ERROR -ne 0 ]; then
-            echo -e "${RED}✗${NC}"
-            
-            # Save the full output to error file
-            echo "━━━━━ $file ━━━━━" >> "$ERROR_FILE"
-            cat "$PYLINT_OUTPUT_FILE" >> "$ERROR_FILE"
-            echo "" >> "$ERROR_FILE"
-            
-            # Save to summary
-            echo "$file: ERRORS" >> "$SUMMARY_FILE"
-            
-            FILES_WITH_ERRORS=$((FILES_WITH_ERRORS + 1))
-            HAS_ERRORS=1
-        else
-            echo -e "${YELLOW}⚠${NC}"
-            
-            # Save warnings
-            grep -E "^[^:]+:[0-9]+:[0-9]*:? [WRC][0-9]+" "$PYLINT_OUTPUT_FILE" >> "$WARNING_FILE" 2>/dev/null || true
-            
-            # Save to summary
-            echo "$file: warnings" >> "$SUMMARY_FILE"
-            
-            FILES_WITH_WARNINGS=$((FILES_WITH_WARNINGS + 1))
-        fi
-    done
-    
-    echo ""
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo ""
-    
-    # Display results
-    if [ $HAS_ERRORS -eq 1 ]; then
-        echo -e "${RED}❌ PUSH BLOCKED: Pylint found errors in main branch!${NC}"
-        echo ""
-        echo "═══════════════════════════════════════════════════════"
-        echo "  SUMMARY"
-        echo "═══════════════════════════════════════════════════════"
-        echo "  Total files checked:     $TOTAL_FILES"
-        echo "  Files with ERRORS:       $FILES_WITH_ERRORS ❌"
-        echo "  Files with warnings:     $FILES_WITH_WARNINGS ⚠️"
-        echo "  Clean files:             $FILES_CLEAN ✓"
-        echo "═══════════════════════════════════════════════════════"
-        echo ""
-        
-        if [ -f "$SUMMARY_FILE" ] && [ -s "$SUMMARY_FILE" ]; then
-            echo -e "${RED}Files with issues:${NC}"
-            cat "$SUMMARY_FILE" | sed 's/^/  /'
-            echo ""
-        fi
-        
-        if [ -f "$ERROR_FILE" ] && [ -s "$ERROR_FILE" ]; then
-            echo -e "${RED}▼▼▼ Detailed error messages ▼▼▼${NC}"
-            echo ""
-            
-            # Show first 100 lines of errors
-            head -100 "$ERROR_FILE"
-            
-            ERROR_LINES=$(wc -l < "$ERROR_FILE")
-            if [ $ERROR_LINES -gt 100 ]; then
-                echo ""
-                echo "... ($ERROR_LINES lines total, showing first 100)"
-                echo ""
-                echo "To see all errors, run:"
-                echo "  find . -name '*.py' -not -path './venv/*' | xargs pylint"
-            fi
-            echo ""
-        fi
-        
-        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        echo ""
-        echo -e "${RED}⛔ Cannot push to main branch with Pylint errors!${NC}"
-        echo ""
-        echo "What to do:"
-        echo "  1. Fix the errors in the files listed above"
-        echo "  2. Run 'pylint <filename>' to see details for each file"
-        echo "  3. Commit your fixes"
-        echo "  4. Try pushing again"
-        echo ""
-        echo "Alternatively:"
-        echo "  • Push to a feature branch first: git push origin HEAD:feature-branch"
-        echo "  • Create a PR for code review before merging to main"
-        echo ""
-        echo "To bypass this check (STRONGLY NOT RECOMMENDED):"
-        echo "  git push --no-verify"
-        echo ""
-        exit 1
-    else
-        echo -e "${GREEN}✅ All Pylint checks passed!${NC}"
-        echo ""
-        echo "═══════════════════════════════════════════════════════"
-        echo "  SUMMARY"
-        echo "═══════════════════════════════════════════════════════"
-        echo "  Total files checked:     $TOTAL_FILES"
-        echo "  Files with errors:       0 ✓"
-        echo "  Files with warnings:     $FILES_WITH_WARNINGS $([ $FILES_WITH_WARNINGS -gt 0 ] && echo '⚠️' || echo '✓')"
-        echo "  Clean files:             $FILES_CLEAN ✓"
-        echo "═══════════════════════════════════════════════════════"
-        echo ""
-        
-        if [ $FILES_WITH_WARNINGS -gt 0 ]; then
-            echo -e "${YELLOW}Note: $FILES_WITH_WARNINGS file(s) have warnings (non-blocking)${NC}"
-            
-            if [ -f "$SUMMARY_FILE" ]; then
-                echo ""
-                echo "Files with warnings:"
-                grep "warnings" "$SUMMARY_FILE" | sed 's/^/  /' || true
-            fi
-            echo ""
-            echo "Consider reviewing warnings before pushing to main."
-        fi
-        
-        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        echo ""
-        echo -e "${GREEN}✓ Proceeding with push to $REMOTE_BRANCH...${NC}"
-        echo ""
-        exit 0
-    fi
-done
-
-# If no input was provided, allow the push
-echo -e "${GREEN}✓ No remote branches to check${NC}"
-exit 0
- || true)
+        PYTHON_FILES=$(git diff --name-only "$remote_sha" "$local_sha" | grep -E '\.py$' || true)
     fi
     
     if [ -z "$PYTHON_FILES" ]; then
         echo -e "${GREEN}ℹ️  No Python files changed in commits being pushed${NC}"
+        echo ""
+        
+        # Trigger Jenkins even if no Python files changed (code was still pushed)
+        echo -e "${GREEN}✓ Proceeding with push to $REMOTE_BRANCH...${NC}"
+        trigger_jenkins_pipeline "$REMOTE_BRANCH"
         echo ""
         exit 0
     fi
@@ -566,6 +320,7 @@ exit 0
         echo "To bypass this check (STRONGLY NOT RECOMMENDED):"
         echo "  git push --no-verify"
         echo ""
+        # DO NOT trigger Jenkins on error - push is blocked
         exit 1
     else
         echo -e "${GREEN}✅ All Pylint checks passed!${NC}"
@@ -596,6 +351,10 @@ exit 0
         echo ""
         echo -e "${GREEN}✓ Proceeding with push to $REMOTE_BRANCH...${NC}"
         echo ""
+        
+        # TRIGGER JENKINS PIPELINE after successful Pylint checks
+        trigger_jenkins_pipeline "$REMOTE_BRANCH"
+        
         exit 0
     fi
 done
