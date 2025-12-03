@@ -208,9 +208,7 @@ pipeline {
                         sh """
                             echo "Connecting to ${DROPLET2_HOST}..."
                             
-                            ssh -o StrictHostKeyChecking=no \
-                                -o ConnectTimeout=10 \
-                                ${DROPLET2_USER}@${DROPLET2_HOST} "bash -s" <<ENDSSH
+                            ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 ${DROPLET2_USER}@${DROPLET2_HOST} 'bash -s' <<'ENDSSH'
                             set -e
 
                             echo "=== Starting Deployment ==="
@@ -261,7 +259,7 @@ pipeline {
                             echo "Verifying packages:"
                             pip show Flask pymongo gunicorn prometheus-client | grep -E "Name|Version" || true
 
-                            # Update environment variables using echo statements (avoids nested heredoc issues)
+                            # Update environment variables using echo statements
                             echo ""
                             echo "⚙️  Updating environment variables..."
                             echo "SECRET_KEY=${SECRET_KEY}" > .env
@@ -330,7 +328,7 @@ pipeline {
                             echo "🏥 Performing health checks..."
                             HEALTH_CHECK_PASSED=false
 
-                            for i in {1..5}; do
+                            for i in 1 2 3 4 5; do
                                 echo "Attempt \$i/5..."
                                 
                                 # Test health endpoint
@@ -386,7 +384,6 @@ pipeline {
                             echo ""
                             echo "🎉 Deployment successful to Droplet 2!"
                             echo "Timestamp: \$(date)"
-
                             ENDSSH
                         """
                     }
