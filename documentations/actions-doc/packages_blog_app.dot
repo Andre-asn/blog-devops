@@ -1,0 +1,30 @@
+digraph "packages_blog_app" {
+rankdir=BT
+charset="utf-8"
+"app" [color="black", label=<app>, shape="box", style="solid"];
+"config" [color="black", label=<config>, shape="box", style="solid"];
+"controllers" [color="black", label=<controllers>, shape="box", style="solid"];
+"controllers.blog_controller" [color="black", label=<controllers.blog_controller>, shape="box", style="solid"];
+"models" [color="black", label=<models>, shape="box", style="solid"];
+"models.blog_post" [color="black", label=<models.blog_post>, shape="box", style="solid"];
+"monitoring" [color="black", label=<monitoring>, shape="box", style="solid"];
+"monitoring.metrics" [color="black", label=<monitoring.metrics>, shape="box", style="solid"];
+"repositories" [color="black", label=<repositories>, shape="box", style="solid"];
+"repositories.blog_repository" [color="black", label=<repositories.blog_repository>, shape="box", style="solid"];
+"repositories.database" [color="black", label=<repositories.database>, shape="box", style="solid"];
+"app" -> "config" [arrowhead="open", arrowtail="none"];
+"app" -> "controllers.blog_controller" [arrowhead="open", arrowtail="none"];
+"app" -> "monitoring.metrics" [arrowhead="open", arrowtail="none"];
+"app" -> "repositories.blog_repository" [arrowhead="open", arrowtail="none"];
+"app" -> "repositories.database" [arrowhead="open", arrowtail="none"];
+"controllers" -> "controllers.blog_controller" [arrowhead="open", arrowtail="none"];
+"controllers.blog_controller" -> "models.blog_post" [arrowhead="open", arrowtail="none"];
+"controllers.blog_controller" -> "monitoring.metrics" [arrowhead="open", arrowtail="none"];
+"controllers.blog_controller" -> "repositories.blog_repository" [arrowhead="open", arrowtail="none"];
+"models" -> "models.blog_post" [arrowhead="open", arrowtail="none"];
+"monitoring" -> "monitoring.metrics" [arrowhead="open", arrowtail="none"];
+"repositories" -> "repositories.blog_repository" [arrowhead="open", arrowtail="none"];
+"repositories" -> "repositories.database" [arrowhead="open", arrowtail="none"];
+"repositories.blog_repository" -> "models.blog_post" [arrowhead="open", arrowtail="none"];
+"repositories.blog_repository" -> "monitoring.metrics" [arrowhead="open", arrowtail="none"];
+}

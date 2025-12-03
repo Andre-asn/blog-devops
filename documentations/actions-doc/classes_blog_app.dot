@@ -1,0 +1,17 @@
+digraph "classes_blog_app" {
+rankdir=BT
+charset="utf-8"
+"app.BlogApplication" [color="black", fontcolor="black", label=<{BlogApplication|app<br ALIGN="LEFT"/>blog_controller : NoneType<br ALIGN="LEFT"/>blog_repository : NoneType<br ALIGN="LEFT"/>config<br ALIGN="LEFT"/>db_connection : NoneType<br ALIGN="LEFT"/>|close()<br ALIGN="LEFT"/>get_app(): Flask<br ALIGN="LEFT"/>}>, shape="record", style="solid"];
+"controllers.blog_controller.BlogController" [color="black", fontcolor="black", label=<{BlogController|blueprint<br ALIGN="LEFT"/>repository<br ALIGN="LEFT"/>|create_post()<br ALIGN="LEFT"/>index()<br ALIGN="LEFT"/>view_post(post_id: str)<br ALIGN="LEFT"/>}>, shape="record", style="solid"];
+"models.blog_post.BlogPost" [color="black", fontcolor="black", label=<{BlogPost|author : str<br ALIGN="LEFT"/>content : str<br ALIGN="LEFT"/>created_at : datetime<br ALIGN="LEFT"/>id : Optional[str]<br ALIGN="LEFT"/>title : str<br ALIGN="LEFT"/>updated_at : datetime<br ALIGN="LEFT"/>|from_dict(post_dict: dict): 'BlogPost'<br ALIGN="LEFT"/>to_dict(): dict<br ALIGN="LEFT"/>validate(): Tuple[bool, Optional[str]]<br ALIGN="LEFT"/>}>, shape="record", style="solid"];
+"repositories.blog_repository.BlogRepository" [color="black", fontcolor="black", label=<{BlogRepository|collection<br ALIGN="LEFT"/>|count(): int<br ALIGN="LEFT"/>create(blog_post: BlogPost): str<br ALIGN="LEFT"/>delete(post_id: str): bool<br ALIGN="LEFT"/>get_all(sort_by: str, order: int): List[BlogPost]<br ALIGN="LEFT"/>get_by_id(post_id: str): Optional[BlogPost]<br ALIGN="LEFT"/>update(post_id: str, blog_post: BlogPost): bool<br ALIGN="LEFT"/>}>, shape="record", style="solid"];
+"config.Config" [color="black", fontcolor="black", label=<{Config|COLLECTION_NAME : str<br ALIGN="LEFT"/>DATABASE_NAME : str<br ALIGN="LEFT"/>FLASK_DEBUG<br ALIGN="LEFT"/>FLASK_ENV : str<br ALIGN="LEFT"/>MONGO_URI : str<br ALIGN="LEFT"/>SECRET_KEY : str<br ALIGN="LEFT"/>|get_database_name(): str<br ALIGN="LEFT"/>get_mongo_uri(): str<br ALIGN="LEFT"/>get_secret_key(): str<br ALIGN="LEFT"/>}>, shape="record", style="solid"];
+"repositories.database.DatabaseConnection" [color="black", fontcolor="black", label=<{DatabaseConnection|database_name : str<br ALIGN="LEFT"/>mongo_uri : str<br ALIGN="LEFT"/>|close()<br ALIGN="LEFT"/>connect(): Database<br ALIGN="LEFT"/>get_collection(collection_name: str): Collection<br ALIGN="LEFT"/>}>, shape="record", style="solid"];
+"config.TestConfig" [color="black", fontcolor="black", label=<{TestConfig|DATABASE_NAME : str<br ALIGN="LEFT"/>|}>, shape="record", style="solid"];
+"config.TestConfig" -> "config.Config" [arrowhead="empty", arrowtail="none"];
+"controllers.blog_controller.BlogController" -> "app.BlogApplication" [arrowhead="diamond", arrowtail="none", fontcolor="green", label="blog_controller", style="solid"];
+"repositories.blog_repository.BlogRepository" -> "app.BlogApplication" [arrowhead="diamond", arrowtail="none", fontcolor="green", label="blog_repository", style="solid"];
+"repositories.database.DatabaseConnection" -> "app.BlogApplication" [arrowhead="diamond", arrowtail="none", fontcolor="green", label="db_connection", style="solid"];
+"config.Config" -> "app.BlogApplication" [arrowhead="odiamond", arrowtail="none", fontcolor="green", label="config", style="solid"];
+"repositories.blog_repository.BlogRepository" -> "controllers.blog_controller.BlogController" [arrowhead="odiamond", arrowtail="none", fontcolor="green", label="repository", style="solid"];
+}
