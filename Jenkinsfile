@@ -206,7 +206,6 @@ pipeline {
                 script {
                     sshagent(credentials: ['droplet2-ssh-key']) {
                         // Write the deployment script to a temporary file
-                        // IMPORTANT: Using echo statements for .env to avoid heredoc issues
                         writeFile file: 'deploy_script.sh', text: """#!/bin/bash
 set -e
 
@@ -222,15 +221,21 @@ echo "✅ In directory: \$(pwd)"
 # Check current branch
 echo "Current branch: \$(git branch --show-current)"
 
-# Stash any local changes
-git stash 2>/dev/null || true
-
-# Pull latest code
+# Discard any local changes
 echo ""
-echo "📥 Pulling latest code from main branch..."
-git fetch origin
-git checkout main
-git pull origin main
+echo "🧹 Cleaning local repository..."
+git reset --hard HEAD
+git clean -fd
+
+# Fetch latest from remote
+echo ""
+echo "📥 Fetching latest code from remote..."
+git fetch origin main
+
+# Force reset to match remote (handles divergent branches)
+echo ""
+echo "🔄 Resetting to origin/main..."
+git reset --hard origin/main
 
 # Show latest commit
 echo "Latest commit: \$(git log -1 --oneline)"
@@ -258,7 +263,7 @@ pip install -r requirements.txt
 echo "Verifying packages:"
 pip show Flask pymongo gunicorn prometheus-client | grep -E "Name|Version" || true
 
-# Update environment variables using echo statements (NO HEREDOC)
+# Update environment variables
 echo ""
 echo "⚙️  Updating environment variables..."
 echo "SECRET_KEY=${SECRET_KEY}" > .env

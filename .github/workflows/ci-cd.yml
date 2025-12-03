@@ -176,13 +176,21 @@ jobs:
           
           echo "Current branch: \$(git branch --show-current)"
           
-          git stash 2>/dev/null || true
-          
+          # Clean local repository
           echo ""
-          echo "📥 Pulling latest code from main branch..."
-          git fetch origin
-          git checkout main
-          git pull origin main
+          echo "🧹 Cleaning local repository..."
+          git reset --hard HEAD
+          git clean -fd
+          
+          # Fetch latest from remote
+          echo ""
+          echo "📥 Fetching latest code from remote..."
+          git fetch origin main
+          
+          # Force reset to match remote (handles divergent branches)
+          echo ""
+          echo "🔄 Resetting to origin/main..."
+          git reset --hard origin/main
           
           echo "Latest commit: \$(git log -1 --oneline)"
           
@@ -271,7 +279,7 @@ jobs:
           echo "🏥 Performing health checks..."
           HEALTH_CHECK_PASSED=false
           
-          for i in {1..5}; do
+          for i in 1 2 3 4 5; do
               echo "Health check attempt \$i/5..."
               
               if curl -f -s http://localhost:5000/health > /dev/null 2>&1; then
@@ -334,33 +342,49 @@ jobs:
           echo ""
           echo "=== Final Verification ==="
           
+          # Add a small delay before verification
+          echo "Waiting 5 seconds before verification..."
+          sleep 5
+          
           echo "Testing external access..."
           
-          ssh $USER@$HOST "bash -s" <<'VERIFY'
-          if curl -f -s http://localhost:5000/health > /dev/null; then
-              echo "✅ Health endpoint accessible"
-          else
-              echo "❌ Health endpoint not accessible"
-              exit 1
-          fi
-          
-          if systemctl is-active --quiet blog-app; then
-              echo "✅ Application service is active"
-          else
-              echo "❌ Application service is not active"
-              exit 1
-          fi
-          
-          if systemctl is-active --quiet mongod; then
-              echo "✅ MongoDB service is active"
-          else
-              echo "❌ MongoDB service is not active"
-              exit 1
-          fi
+          # Retry logic for verification
+          for attempt in 1 2 3; do
+            echo "Verification attempt $attempt/3..."
+            
+            if ssh -o ConnectTimeout=30 -o ServerAliveInterval=10 $USER@$HOST "bash -s" <<'VERIFY'
+              if curl -f -s http://localhost:5000/health > /dev/null; then
+                  echo "✅ Health endpoint accessible"
+              else
+                  echo "❌ Health endpoint not accessible"
+                  exit 1
+              fi
+              
+              if systemctl is-active --quiet blog-app; then
+                  echo "✅ Application service is active"
+              else
+                  echo "❌ Application service is not active"
+                  exit 1
+              fi
+              
+              if systemctl is-active --quiet mongod; then
+                  echo "✅ MongoDB service is active"
+              else
+                  echo "❌ MongoDB service is not active"
+                  exit 1
+              fi
           VERIFY
+            then
+              echo "✅ Verification successful!"
+              exit 0
+            else
+              echo "⚠️ Attempt $attempt failed, retrying in 5 seconds..."
+              sleep 5
+            fi
+          done
           
-          echo ""
-          echo "✅ All verification checks passed!"
+          echo "❌ Verification failed after 3 attempts"
+          exit 1
 
   notify:
     name: Deployment Notification
@@ -381,11 +405,6 @@ jobs:
           
           if [ "${{ needs.deploy.result }}" == "success" ]; then
             echo "✅ Deployment to Droplet 1 was successful!"
-            echo ""
-            echo "🌐 Application URLs:"
-            echo "  Main: http://${{ secrets.DIGITALOCEAN_HOST }}"
-            echo "  Health: http://${{ secrets.DIGITALOCEAN_HOST }}/health"
-            echo "  Metrics: http://${{ secrets.DIGITALOCEAN_HOST }}/metrics"
             echo ""
             echo "📊 Build Information:"
             echo "  Run: #${{ github.run_number }}"
