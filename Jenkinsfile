@@ -17,8 +17,14 @@ pipeline {
         SECRET_KEY = credentials('secret-key')
         DATABASE_NAME = credentials('database-name')
         
+        // GitHub credentials for pushing documentation
+        GITHUB_TOKEN = credentials('github-token')
+        
         // Add Homebrew paths for MongoDB (macOS)
         PATH = "/opt/homebrew/bin:/usr/local/bin:${env.PATH}"
+        
+        // Documentation directory
+        DOC_DIR = 'documentations/jenkins-doc'
     }
     
     stages {
@@ -45,9 +51,12 @@ pipeline {
                     # Install dependencies
                     pip install -r requirements.txt
                     
+                    # Install Pylint (includes Pyreverse)
+                    pip install pylint
+                    
                     # Verify critical packages
                     echo "Installed packages:"
-                    pip list | grep -E "Flask|pymongo|pytest|gunicorn|prometheus"
+                    pip list | grep -E "Flask|pymongo|pytest|gunicorn|prometheus|pylint"
                 '''
             }
         }
@@ -194,6 +203,202 @@ pipeline {
                 ])
                 
                 echo '✅ Test reports published successfully'
+            }
+        }
+        
+        stage('Generate Pyreverse Documentation') {
+            steps {
+                echo '📚 Generating Pyreverse UML documentation...'
+                sh '''
+                    # Activate virtual environment
+                    . ${VENV_DIR}/bin/activate
+                    
+                    # Create documentation directory
+                    mkdir -p ${DOC_DIR}
+                    
+                    # Find all Python files (excluding venv, tests, and __pycache__)
+                    echo "=== Finding Python files ==="
+                    PYTHON_FILES=$(find . -name "*.py" \
+                        -not -path "./venv/*" \
+                        -not -path "./.venv/*" \
+                        -not -path "./${VENV_DIR}/*" \
+                        -not -path "./__pycache__/*" \
+                        -not -path "./tests/*" \
+                        -not -path "./test_*" \
+                        -not -path "./.git/*" \
+                        -not -path "./htmlcov/*" \
+                        -not -name "conftest.py" \
+                        -not -name "test_*.py" \
+                        | tr '\\n' ' ')
+                    
+                    echo "Python files found:"
+                    echo "$PYTHON_FILES" | tr ' ' '\\n' | grep -v "^$" | sed 's/^/  • /'
+                    echo ""
+                    
+                    if [ -z "$PYTHON_FILES" ]; then
+                        echo "⚠️  No Python files found to analyze"
+                        exit 0
+                    fi
+                    
+                    # Check if Graphviz is installed
+                    echo "=== Checking Graphviz ==="
+                    if command -v dot > /dev/null 2>&1; then
+                        echo "✅ Graphviz is installed: $(dot -V 2>&1)"
+                        GRAPHVIZ_AVAILABLE=true
+                    else
+                        echo "⚠️  Graphviz (dot) not found - will generate .dot files only"
+                        echo "   Install with: brew install graphviz"
+                        GRAPHVIZ_AVAILABLE=false
+                    fi
+                    echo ""
+                    
+                    # Generate UML diagrams with Pyreverse
+                    echo "=== Running Pyreverse ==="
+                    
+                    # Generate class diagrams
+                    echo "Generating class diagrams..."
+                    pyreverse -o dot -p blog_app $PYTHON_FILES -d ${DOC_DIR} 2>/dev/null || true
+                    
+                    # List generated .dot files
+                    echo ""
+                    echo "Generated .dot files:"
+                    ls -la ${DOC_DIR}/*.dot 2>/dev/null | sed 's/^/  /' || echo "  No .dot files generated"
+                    echo ""
+                    
+                    # Convert .dot files to PNG and SVG if Graphviz is available
+                    if [ "$GRAPHVIZ_AVAILABLE" = true ]; then
+                        echo "=== Converting to PNG and SVG ==="
+                        
+                        for dotfile in ${DOC_DIR}/*.dot; do
+                            if [ -f "$dotfile" ]; then
+                                basename=$(basename "$dotfile" .dot)
+                                echo "Converting $basename..."
+                                
+                                # Generate PNG
+                                dot -Tpng "$dotfile" -o "${DOC_DIR}/${basename}.png" 2>/dev/null && \
+                                    echo "  ✅ ${basename}.png" || echo "  ⚠️  Failed to generate ${basename}.png"
+                                
+                                # Generate SVG
+                                dot -Tsvg "$dotfile" -o "${DOC_DIR}/${basename}.svg" 2>/dev/null && \
+                                    echo "  ✅ ${basename}.svg" || echo "  ⚠️  Failed to generate ${basename}.svg"
+                            fi
+                        done
+                        echo ""
+                    fi
+                    
+                    # Generate README for the documentation
+                    echo "=== Generating Documentation README ==="
+                    cat > ${DOC_DIR}/README.md << 'DOCREADME'
+# Jenkins Pipeline - Code Documentation
+
+This documentation is automatically generated by the Jenkins CI/CD pipeline using Pyreverse.
+
+## Generated Files
+
+### UML Diagrams
+
+| File | Description |
+|------|-------------|
+| `classes_blog_app.dot` | Class diagram in DOT format |
+| `classes_blog_app.png` | Class diagram as PNG image |
+| `classes_blog_app.svg` | Class diagram as SVG (scalable) |
+| `packages_blog_app.dot` | Package diagram in DOT format |
+| `packages_blog_app.png` | Package diagram as PNG image |
+| `packages_blog_app.svg` | Package diagram as SVG (scalable) |
+
+### Class Diagram
+Shows the classes in the application, their attributes, methods, and relationships.
+
+![Class Diagram](classes_blog_app.png)
+
+### Package Diagram
+Shows the package/module structure and dependencies.
+
+![Package Diagram](packages_blog_app.png)
+
+## Generation Details
+
+- **Generated by**: Jenkins Pipeline
+- **Tool**: Pyreverse (part of Pylint)
+- **Visualization**: Graphviz
+
+## How to Regenerate
+
+These diagrams are automatically regenerated on each successful Jenkins pipeline run.
+
+To manually regenerate:
+```bash
+# Install dependencies
+pip install pylint
+
+# Generate .dot files
+pyreverse -o dot -p blog_app *.py
+
+# Convert to images (requires Graphviz)
+dot -Tpng classes_blog_app.dot -o classes_blog_app.png
+dot -Tsvg classes_blog_app.dot -o classes_blog_app.svg
+```
+
+## Last Updated
+
+DOCREADME
+                    
+                    # Add timestamp to README
+                    echo "**Timestamp**: $(date)" >> ${DOC_DIR}/README.md
+                    echo "" >> ${DOC_DIR}/README.md
+                    echo "**Build Number**: ${BUILD_NUMBER}" >> ${DOC_DIR}/README.md
+                    
+                    # Show final documentation directory contents
+                    echo "=== Documentation Generated ==="
+                    echo "Contents of ${DOC_DIR}:"
+                    ls -la ${DOC_DIR}/ | sed 's/^/  /'
+                    echo ""
+                    echo "✅ Pyreverse documentation generated successfully"
+                '''
+            }
+        }
+        
+        stage('Commit Documentation to GitHub') {
+            steps {
+                echo '📤 Committing documentation to GitHub...'
+                sh '''
+                    # Configure git
+                    git config user.email "jenkins@ci.local"
+                    git config user.name "Jenkins CI"
+                    
+                    # Check if there are changes to commit
+                    if [ -d "${DOC_DIR}" ] && [ "$(ls -A ${DOC_DIR})" ]; then
+                        echo "Documentation files found:"
+                        ls -la ${DOC_DIR}/ | sed 's/^/  /'
+                        echo ""
+                        
+                        # Add documentation files
+                        git add ${DOC_DIR}/
+                        
+                        # Check if there are staged changes
+                        if git diff --cached --quiet; then
+                            echo "ℹ️  No changes to documentation - skipping commit"
+                        else
+                            echo "Committing documentation changes..."
+                            git commit -m "docs(jenkins): Update Pyreverse UML documentation [Build #${BUILD_NUMBER}]
+
+Generated by Jenkins Pipeline
+- Class diagrams
+- Package diagrams
+- PNG and SVG formats
+
+[skip ci]"
+                            
+                            # Push to repository
+                            echo "Pushing to repository..."
+                            git push https://${GITHUB_TOKEN}@github.com/Andre-asn/blog-devops.git HEAD:main
+                            
+                            echo "✅ Documentation committed and pushed successfully"
+                        fi
+                    else
+                        echo "⚠️  No documentation files found to commit"
+                    fi
+                '''
             }
         }
         
