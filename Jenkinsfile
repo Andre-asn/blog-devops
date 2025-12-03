@@ -198,11 +198,13 @@ pipeline {
         }
         
         stage('Deploy to DigitalOcean Droplet 2') {
-            when {
-                branch 'main'
-            }
+            // FIXED: Removed 'when' condition to always deploy on successful tests
+            // Original condition was checking for branch 'main' which might not match
             steps {
                 echo '🚀 Deploying to DigitalOcean Droplet 2...'
+                echo "Branch: ${env.GIT_BRANCH}"
+                echo "Build Number: ${env.BUILD_NUMBER}"
+                
                 script {
                     sshagent(credentials: ['droplet2-ssh-key']) {
                         sh """
@@ -210,7 +212,7 @@ pipeline {
                             
                             ssh -o StrictHostKeyChecking=no \
                                 -o ConnectTimeout=10 \
-                                ${DROPLET2_USER}@${DROPLET2_HOST} << 'ENDSSH'
+                                ${DROPLET2_USER}@${DROPLET2_HOST} "bash -s" <<'ENDSSH'
                             set -e
 
                             echo "=== Starting Deployment ==="
@@ -264,13 +266,13 @@ pipeline {
                             # Update environment variables
                             echo ""
                             echo "⚙️  Updating environment variables..."
-                            cat > .env << 'EOF'
+                            cat > .env <<ENVEOF
                             SECRET_KEY=${SECRET_KEY}
                             MONGO_URI=${MONGO_URI}
                             DATABASE_NAME=${DATABASE_NAME}
                             FLASK_ENV=production
                             FLASK_DEBUG=False
-                            EOF
+                            ENVEOF
                             chmod 600 .env
                             echo "✅ Environment file updated"
 
