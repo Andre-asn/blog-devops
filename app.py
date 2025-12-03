@@ -52,7 +52,7 @@ class BlogApplication:
         def health_check():
             return {'status': 'healthy', 'service': 'blog-app'}, 200
         
-        @self.app.route('/welcome-group14')
+        @self.app.route('/welcome-devops')
         def hello():
             return {'message': 'Hello, world!'}, 200
         
