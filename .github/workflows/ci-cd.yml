@@ -56,15 +56,24 @@ jobs:
       - name: Wait for MongoDB
         run: |
           echo "Waiting for MongoDB to be ready..."
-          for i in {1..30}; do
-            if mongosh --eval "db.adminCommand('ping')" > /dev/null 2>&1; then
-              echo "✅ MongoDB is ready"
-              break
-            fi
-            echo "Waiting... ($i/30)"
-            sleep 2
-          done
-          mongosh --eval "db.adminCommand('ping')"
+          python3 << 'EOF'
+          import time
+          from pymongo import MongoClient
+          from pymongo.errors import ConnectionFailure
+
+          for i in range(30):
+              try:
+                  client = MongoClient("mongodb://localhost:27017/", serverSelectionTimeoutMS=2000)
+                  client.admin.command('ping')
+                  print("✅ MongoDB is ready")
+                  exit(0)
+              except ConnectionFailure:
+                  print(f"Waiting... ({i+1}/30)")
+                  time.sleep(2)
+          
+          print("❌ MongoDB failed to become ready")
+          exit(1)
+          EOF
       
       - name: Run tests
         env:
@@ -155,17 +164,17 @@ jobs:
           echo "GitHub Run: #$GITHUB_RUN"
           echo ""
           
-          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 $USER@$HOST "bash -s" <<'ENDSSH'
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 $USER@$HOST "bash -s" <<ENDSSH
           set -e
           
           echo "=== Deployment Started ==="
-          echo "Timestamp: $(date)"
+          echo "Timestamp: \$(date)"
           echo ""
           
-          cd $APP_DIR
-          echo "✅ In directory: $(pwd)"
+          cd ${APP_DIR}
+          echo "✅ In directory: \$(pwd)"
           
-          echo "Current branch: $(git branch --show-current)"
+          echo "Current branch: \$(git branch --show-current)"
           
           git stash 2>/dev/null || true
           
@@ -175,7 +184,7 @@ jobs:
           git checkout main
           git pull origin main
           
-          echo "Latest commit: $(git log -1 --oneline)"
+          echo "Latest commit: \$(git log -1 --oneline)"
           
           echo ""
           echo "🐍 Activating virtual environment..."
@@ -185,8 +194,8 @@ jobs:
           fi
           source venv/bin/activate
           
-          echo "Python: $(which python3)"
-          echo "Pip: $(which pip)"
+          echo "Python: \$(which python3)"
+          echo "Pip: \$(which pip)"
           
           echo ""
           echo "📦 Installing/updating dependencies..."
@@ -198,13 +207,11 @@ jobs:
           
           echo ""
           echo "⚙️  Updating environment variables..."
-          cat > .env <<ENVEOF
-          SECRET_KEY=$SECRET_KEY
-          MONGO_URI=$MONGO_URI
-          DATABASE_NAME=$DATABASE_NAME
-          FLASK_ENV=production
-          FLASK_DEBUG=False
-          ENVEOF
+          echo "SECRET_KEY=${SECRET_KEY}" > .env
+          echo "MONGO_URI=${MONGO_URI}" >> .env
+          echo "DATABASE_NAME=${DATABASE_NAME}" >> .env
+          echo "FLASK_ENV=production" >> .env
+          echo "FLASK_DEBUG=False" >> .env
           chmod 600 .env
           echo "✅ Environment file updated"
           
@@ -265,22 +272,22 @@ jobs:
           HEALTH_CHECK_PASSED=false
           
           for i in {1..5}; do
-              echo "Health check attempt $i/5..."
+              echo "Health check attempt \$i/5..."
               
               if curl -f -s http://localhost:5000/health > /dev/null 2>&1; then
-                  HEALTH_RESPONSE=$(curl -s http://localhost:5000/health)
-                  echo "✅ Health endpoint responding: $HEALTH_RESPONSE"
+                  HEALTH_RESPONSE=\$(curl -s http://localhost:5000/health)
+                  echo "✅ Health endpoint responding: \$HEALTH_RESPONSE"
                   HEALTH_CHECK_PASSED=true
                   break
               else
-                  if [ $i -lt 5 ]; then
+                  if [ \$i -lt 5 ]; then
                       echo "⚠️  Health check failed, retrying in 3 seconds..."
                       sleep 3
                   fi
               fi
           done
           
-          if [ "$HEALTH_CHECK_PASSED" = false ]; then
+          if [ "\$HEALTH_CHECK_PASSED" = false ]; then
               echo "❌ Health check failed after 5 attempts"
               echo ""
               echo "=== Application Logs ==="
@@ -316,7 +323,7 @@ jobs:
           echo "✅ All health checks passed"
           echo ""
           echo "🎉 Deployment successful to Droplet 1!"
-          echo "Timestamp: $(date)"
+          echo "Timestamp: \$(date)"
           ENDSSH
       
       - name: Verify deployment

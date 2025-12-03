@@ -52,6 +52,10 @@ class BlogApplication:
         def health_check():
             return {'status': 'healthy', 'service': 'blog-app'}, 200
         
+        @self.app.route('/hello')
+        def hello():
+            return {'message': 'Hello, world!'}, 200
+        
         # Update metrics on startup
         if self.blog_repository:
             update_blog_posts_count(self.blog_repository)

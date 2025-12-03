@@ -198,8 +198,6 @@ pipeline {
         }
         
         stage('Deploy to DigitalOcean Droplet 2') {
-            // FIXED: Removed 'when' condition to always deploy on successful tests
-            // Original condition was checking for branch 'main' which might not match
             steps {
                 echo '🚀 Deploying to DigitalOcean Droplet 2...'
                 echo "Branch: ${env.GIT_BRANCH}"
@@ -212,7 +210,7 @@ pipeline {
                             
                             ssh -o StrictHostKeyChecking=no \
                                 -o ConnectTimeout=10 \
-                                ${DROPLET2_USER}@${DROPLET2_HOST} "bash -s" <<'ENDSSH'
+                                ${DROPLET2_USER}@${DROPLET2_HOST} "bash -s" <<ENDSSH
                             set -e
 
                             echo "=== Starting Deployment ==="
@@ -263,16 +261,14 @@ pipeline {
                             echo "Verifying packages:"
                             pip show Flask pymongo gunicorn prometheus-client | grep -E "Name|Version" || true
 
-                            # Update environment variables
+                            # Update environment variables using echo statements (avoids nested heredoc issues)
                             echo ""
                             echo "⚙️  Updating environment variables..."
-                            cat > .env <<ENVEOF
-                            SECRET_KEY=${SECRET_KEY}
-                            MONGO_URI=${MONGO_URI}
-                            DATABASE_NAME=${DATABASE_NAME}
-                            FLASK_ENV=production
-                            FLASK_DEBUG=False
-                            ENVEOF
+                            echo "SECRET_KEY=${SECRET_KEY}" > .env
+                            echo "MONGO_URI=${MONGO_URI}" >> .env
+                            echo "DATABASE_NAME=${DATABASE_NAME}" >> .env
+                            echo "FLASK_ENV=production" >> .env
+                            echo "FLASK_DEBUG=False" >> .env
                             chmod 600 .env
                             echo "✅ Environment file updated"
 
