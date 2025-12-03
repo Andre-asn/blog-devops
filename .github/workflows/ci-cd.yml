@@ -12,6 +12,10 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  VERSION_MAJOR: '1'
+  VERSION_MINOR: '0'
+
 jobs:
   test:
     name: Run Tests
@@ -419,9 +423,364 @@ jobs:
             exit 0
           fi
 
+  generate-artifact:
+    name: Generate Deployment Artifact
+    needs: [test, generate-documentation]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      artifact_name: ${{ steps.version.outputs.artifact_name }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+      
+      - name: Pull latest changes
+        run: |
+          echo "=== Syncing with remote before artifact generation ==="
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          git fetch origin main
+          git pull origin main --rebase --autostash || git reset --hard origin/main
+          
+          echo "Current commit: $(git rev-parse HEAD)"
+      
+      - name: Calculate version
+        id: version
+        run: |
+          VERSION="${{ env.VERSION_MAJOR }}.${{ env.VERSION_MINOR }}.${{ github.run_number }}"
+          ARTIFACT_NAME="blog-app-${VERSION}"
+          
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "artifact_name=${ARTIFACT_NAME}" >> $GITHUB_OUTPUT
+          
+          echo "=== Version Information ==="
+          echo "Version: ${VERSION}"
+          echo "Artifact Name: ${ARTIFACT_NAME}"
+      
+      - name: Create artifact directory
+        run: |
+          mkdir -p artifacts/actions
+          mkdir -p temp_artifact
+          echo "✅ Created artifact directories"
+      
+      - name: Collect application files
+        run: |
+          echo "=== Collecting Application Files ==="
+          
+          # Copy Python files
+          echo "Copying Python source files..."
+          find . -name "*.py" \
+            -not -path "./venv/*" \
+            -not -path "./.venv/*" \
+            -not -path "./__pycache__/*" \
+            -not -path "./.git/*" \
+            -not -path "./htmlcov/*" \
+            -not -path "./artifacts/*" \
+            -not -path "./temp_artifact/*" \
+            -exec cp --parents {} temp_artifact/ \;
+          
+          # Copy templates
+          if [ -d "templates" ]; then
+            echo "Copying templates..."
+            cp -r templates temp_artifact/
+          fi
+          
+          # Copy static files
+          if [ -d "static" ]; then
+            echo "Copying static files..."
+            cp -r static temp_artifact/
+          fi
+          
+          # Copy requirements
+          if [ -f "requirements.txt" ]; then
+            echo "Copying requirements.txt..."
+            cp requirements.txt temp_artifact/
+          fi
+          
+          # Copy configuration files
+          for config_file in .pylintrc pytest.ini setup.py setup.cfg pyproject.toml; do
+            if [ -f "$config_file" ]; then
+              echo "Copying $config_file..."
+              cp "$config_file" temp_artifact/
+            fi
+          done
+          
+          echo "✅ Application files collected"
+      
+      - name: Generate VERSION file
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          echo "Generating VERSION file..."
+          cat > temp_artifact/VERSION << EOF
+          {
+              "version": "${VERSION}",
+              "major": ${{ env.VERSION_MAJOR }},
+              "minor": ${{ env.VERSION_MINOR }},
+              "build": ${{ github.run_number }},
+              "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+              "git_commit": "${{ github.sha }}",
+              "git_branch": "main",
+              "built_by": "GitHub Actions",
+              "workflow": "${{ github.workflow }}",
+              "run_id": "${{ github.run_id }}"
+          }
+          EOF
+          
+          echo "✅ VERSION file generated"
+          cat temp_artifact/VERSION
+      
+      - name: Generate MANIFEST file
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          echo "Generating MANIFEST file..."
+          cat > temp_artifact/MANIFEST << EOF
+          Blog Application Deployment Artifact
+          =====================================
+
+          Version: ${VERSION}
+          Build Number: ${{ github.run_number }}
+          Build Date: $(date -u)
+          Git Commit: ${{ github.sha }}
+          Git Branch: main
+          Workflow: ${{ github.workflow }}
+          Run ID: ${{ github.run_id }}
+
+          Contents:
+          ---------
+          EOF
+          
+          # List contents for manifest
+          (cd temp_artifact && find . -type f | sort | sed 's/^/  /') >> temp_artifact/MANIFEST
+          
+          echo "✅ MANIFEST file generated"
+      
+      - name: Create ZIP artifact
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          ARTIFACT_NAME: ${{ steps.version.outputs.artifact_name }}
+        run: |
+          echo "=== Creating ZIP Artifact ==="
+          
+          cd temp_artifact
+          zip -r "../artifacts/actions/${ARTIFACT_NAME}.zip" .
+          cd ..
+          
+          echo "✅ ZIP artifact created"
+          ls -lh "artifacts/actions/${ARTIFACT_NAME}.zip"
+      
+      - name: Generate artifact README
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          ARTIFACT_NAME: ${{ steps.version.outputs.artifact_name }}
+        run: |
+          echo "Generating artifact README..."
+          cat > artifacts/actions/README.md << 'READMEEOF'
+          # GitHub Actions - Deployment Artifacts
+
+          This directory contains deployment-ready artifacts generated by the GitHub Actions CI/CD pipeline.
+
+          ## Versioning Scheme
+
+          Artifacts use semantic versioning in the format: `major.minor.changelist`
+
+          - **Major**: Major version (breaking changes)
+          - **Minor**: Minor version (new features, backward compatible)
+          - **Changelist**: GitHub Actions run number (incremental)
+
+          ## Artifact Contents
+
+          The ZIP artifact contains:
+          - Python source files (*.py)
+          - Templates (templates/)
+          - Static files (static/)
+          - Requirements (requirements.txt)
+          - Configuration files
+          - VERSION file (JSON metadata)
+          - MANIFEST file (contents listing)
+
+          ## How to Deploy
+
+          1. Download the artifact ZIP file
+          2. Extract to your deployment directory
+          3. Create virtual environment: `python3 -m venv venv`
+          4. Activate: `source venv/bin/activate`
+          5. Install dependencies: `pip install -r requirements.txt`
+          6. Configure environment variables
+          7. Start the application
+
+          ## Available Artifacts
+
+          READMEEOF
+          
+          echo "" >> artifacts/actions/README.md
+          echo "| Version | Filename | Size | Date |" >> artifacts/actions/README.md
+          echo "|---------|----------|------|------|" >> artifacts/actions/README.md
+          
+          for artifact in artifacts/actions/*.zip; do
+            if [ -f "$artifact" ]; then
+              artifact_file=$(basename "$artifact")
+              artifact_size=$(du -h "$artifact" | cut -f1)
+              artifact_ver=$(echo "$artifact_file" | sed 's/blog-app-\(.*\)\.zip/\1/')
+              echo "| ${artifact_ver} | ${artifact_file} | ${artifact_size} | $(date -u +%Y-%m-%d) |" >> artifacts/actions/README.md
+            fi
+          done
+          
+          echo "" >> artifacts/actions/README.md
+          echo "## Current Build" >> artifacts/actions/README.md
+          echo "" >> artifacts/actions/README.md
+          echo "| Property | Value |" >> artifacts/actions/README.md
+          echo "|----------|-------|" >> artifacts/actions/README.md
+          echo "| Version | ${VERSION} |" >> artifacts/actions/README.md
+          echo "| Filename | ${ARTIFACT_NAME}.zip |" >> artifacts/actions/README.md
+          echo "| GitHub Run | #${{ github.run_number }} |" >> artifacts/actions/README.md
+          echo "| Commit | ${{ github.sha }} |" >> artifacts/actions/README.md
+          echo "| Timestamp | $(date -u) |" >> artifacts/actions/README.md
+          
+          echo "✅ README generated"
+      
+      - name: Clean up temp directory
+        run: rm -rf temp_artifact
+      
+      - name: Upload artifact to GitHub
+        uses: actions/upload-artifact@v4
+        with:
+          name: deployment-artifact-${{ steps.version.outputs.version }}
+          path: artifacts/actions/${{ steps.version.outputs.artifact_name }}.zip
+          retention-days: 90
+      
+      - name: List artifact directory
+        run: |
+          echo "=== Artifact Directory Contents ==="
+          ls -la artifacts/actions/
+      
+      - name: Commit and push artifact with retry
+        env:
+          MAX_RETRIES: 5
+          RETRY_DELAY: 10
+          VERSION: ${{ steps.version.outputs.version }}
+          ARTIFACT_NAME: ${{ steps.version.outputs.artifact_name }}
+        run: |
+          echo "=== Committing Artifact with Retry Logic ==="
+          
+          attempt_push() {
+            local attempt=$1
+            echo ""
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "Attempt $attempt of $MAX_RETRIES"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            
+            echo "Fetching latest from origin/main..."
+            git fetch origin main
+            
+            LOCAL_COMMIT=$(git rev-parse HEAD)
+            REMOTE_COMMIT=$(git rev-parse origin/main)
+            
+            echo "Local commit:  $LOCAL_COMMIT"
+            echo "Remote commit: $REMOTE_COMMIT"
+            
+            if [ "$LOCAL_COMMIT" != "$REMOTE_COMMIT" ]; then
+              BEHIND=$(git rev-list HEAD..origin/main --count)
+              echo "⚠️  Local is $BEHIND commit(s) behind remote"
+              
+              echo "Rebasing onto origin/main..."
+              if git rebase origin/main; then
+                echo "✅ Rebase successful"
+              else
+                echo "⚠️  Rebase had conflicts, attempting to resolve..."
+                
+                CONFLICTS=$(git diff --name-only --diff-filter=U)
+                echo "Conflicts in: $CONFLICTS"
+                
+                if echo "$CONFLICTS" | grep -q "artifacts/actions/"; then
+                  echo "Conflict in artifacts/actions, using our version..."
+                  git checkout --ours artifacts/actions/
+                  git add artifacts/actions/
+                  git rebase --continue || git rebase --skip
+                else
+                  echo "Conflicts outside our artifact path, aborting..."
+                  git rebase --abort
+                  return 1
+                fi
+              fi
+            else
+              echo "✅ Already up to date with remote"
+            fi
+            
+            git add artifacts/actions/
+            
+            if git diff --cached --quiet; then
+              echo "ℹ️  No changes to commit - skipping"
+              return 0
+            fi
+            
+            echo "Committing artifact..."
+            git commit -m "build(actions): Add deployment artifact v${VERSION} [Run #${{ github.run_number }}]
+
+          Generated by GitHub Actions:
+          - Artifact: ${ARTIFACT_NAME}.zip
+          - Version: ${VERSION}
+          - Commit: ${{ github.sha }}
+
+          [skip ci]"
+            
+            echo "Pushing to repository..."
+            if git push origin HEAD:main; then
+              echo "✅ Successfully pushed artifact"
+              return 0
+            else
+              echo "❌ Push failed"
+              return 1
+            fi
+          }
+          
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          SUCCESS=false
+          for i in $(seq 1 $MAX_RETRIES); do
+            if attempt_push $i; then
+              SUCCESS=true
+              break
+            else
+              if [ $i -lt $MAX_RETRIES ]; then
+                echo ""
+                echo "⏳ Waiting ${RETRY_DELAY} seconds before retry..."
+                sleep $RETRY_DELAY
+              fi
+            fi
+          done
+          
+          if [ "$SUCCESS" = true ]; then
+            echo ""
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "✅ Artifact successfully committed and pushed"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo ""
+            echo "Artifact: ${ARTIFACT_NAME}.zip"
+            echo "Version: ${VERSION}"
+            echo "Location: artifacts/actions/"
+          else
+            echo ""
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "⚠️  Failed to push artifact after $MAX_RETRIES attempts"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo ""
+            echo "Artifact is still available as GitHub Actions artifact"
+            exit 0
+          fi
+
   deploy:
     name: Deploy to Droplet 1
-    needs: [test, generate-documentation]
+    needs: [test, generate-documentation, generate-artifact]
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     
@@ -464,12 +823,14 @@ jobs:
           MONGO_URI: ${{ secrets.MONGO_URI }}
           DATABASE_NAME: ${{ secrets.DATABASE_NAME }}
           GITHUB_RUN: ${{ github.run_number }}
+          VERSION: ${{ needs.generate-artifact.outputs.version }}
         run: |
           echo "=== Starting Deployment to Droplet 1 ==="
           echo "Host: $HOST"
           echo "User: $USER"
           echo "App Directory: $APP_DIR"
           echo "GitHub Run: #$GITHUB_RUN"
+          echo "Version: $VERSION"
           echo ""
           
           ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 $USER@$HOST "bash -s" <<ENDSSH
@@ -677,7 +1038,7 @@ jobs:
 
   notify:
     name: Deployment Notification
-    needs: deploy
+    needs: [deploy, generate-artifact]
     runs-on: ubuntu-latest
     if: always()
     
@@ -686,6 +1047,7 @@ jobs:
         run: |
           echo "=== Deployment Status ==="
           echo "Status: ${{ needs.deploy.result }}"
+          echo "Version: ${{ needs.generate-artifact.outputs.version }}"
           echo "GitHub Run: #${{ github.run_number }}"
           echo "Commit: ${{ github.sha }}"
           echo "Branch: ${{ github.ref }}"
@@ -696,9 +1058,12 @@ jobs:
             echo "✅ Deployment to Droplet 1 was successful!"
             echo ""
             echo "📊 Build Information:"
+            echo "  Version: ${{ needs.generate-artifact.outputs.version }}"
             echo "  Run: #${{ github.run_number }}"
             echo "  Commit: ${{ github.sha }}"
             echo "  Time: $(date)"
+            echo ""
+            echo "📦 Artifact: ${{ needs.generate-artifact.outputs.artifact_name }}.zip"
           else
             echo "❌ Deployment to Droplet 1 failed!"
             echo ""

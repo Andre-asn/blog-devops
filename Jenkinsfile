@@ -27,6 +27,11 @@ pipeline {
         // Documentation directory
         DOC_DIR = 'documentations/jenkins-doc'
         
+        // Artifact configuration
+        ARTIFACT_DIR = 'artifacts/jenkins'
+        VERSION_MAJOR = '1'
+        VERSION_MINOR = '0'
+        
         // Retry configuration
         MAX_RETRIES = '5'
         RETRY_DELAY = '10'
@@ -406,11 +411,209 @@ DOCREADME
             }
         }
         
-        stage('Commit Documentation to GitHub') {
+        stage('Generate Deployment Artifact') {
             steps {
-                echo '📤 Committing documentation to GitHub with retry logic...'
+                echo '📦 Generating deployment-ready artifact with semantic versioning...'
                 sh '''
-                    echo "=== Committing Documentation with Retry Logic ==="
+                    echo "=== Generating Deployment Artifact ==="
+                    
+                    # Define version
+                    VERSION="${VERSION_MAJOR}.${VERSION_MINOR}.${BUILD_NUMBER}"
+                    ARTIFACT_NAME="blog-app-${VERSION}"
+                    ARTIFACT_FILE="${ARTIFACT_NAME}.zip"
+                    
+                    echo "Version: ${VERSION}"
+                    echo "Artifact Name: ${ARTIFACT_NAME}"
+                    echo ""
+                    
+                    # Create artifact directory
+                    mkdir -p ${ARTIFACT_DIR}
+                    
+                    # Create a temporary directory for artifact contents
+                    TEMP_ARTIFACT_DIR=$(mktemp -d)
+                    echo "Temporary directory: ${TEMP_ARTIFACT_DIR}"
+                    
+                    # Copy application files (excluding unnecessary files)
+                    echo ""
+                    echo "=== Collecting Application Files ==="
+                    
+                    # Copy Python files
+                    echo "Copying Python source files..."
+                    find . -name "*.py" \
+                        -not -path "./venv/*" \
+                        -not -path "./.venv/*" \
+                        -not -path "./${VENV_DIR}/*" \
+                        -not -path "./__pycache__/*" \
+                        -not -path "./.git/*" \
+                        -not -path "./htmlcov/*" \
+                        -not -path "./artifacts/*" \
+                        -exec cp --parents {} ${TEMP_ARTIFACT_DIR}/ \\;
+                    
+                    # Copy templates
+                    if [ -d "templates" ]; then
+                        echo "Copying templates..."
+                        cp -r templates ${TEMP_ARTIFACT_DIR}/
+                    fi
+                    
+                    # Copy static files
+                    if [ -d "static" ]; then
+                        echo "Copying static files..."
+                        cp -r static ${TEMP_ARTIFACT_DIR}/
+                    fi
+                    
+                    # Copy requirements
+                    if [ -f "requirements.txt" ]; then
+                        echo "Copying requirements.txt..."
+                        cp requirements.txt ${TEMP_ARTIFACT_DIR}/
+                    fi
+                    
+                    # Copy configuration files
+                    for config_file in .pylintrc pytest.ini setup.py setup.cfg pyproject.toml; do
+                        if [ -f "$config_file" ]; then
+                            echo "Copying $config_file..."
+                            cp "$config_file" ${TEMP_ARTIFACT_DIR}/
+                        fi
+                    done
+                    
+                    # Generate VERSION file
+                    echo "Generating VERSION file..."
+                    cat > ${TEMP_ARTIFACT_DIR}/VERSION << VERSIONEOF
+{
+    "version": "${VERSION}",
+    "major": ${VERSION_MAJOR},
+    "minor": ${VERSION_MINOR},
+    "build": ${BUILD_NUMBER},
+    "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+    "git_commit": "$(git rev-parse HEAD)",
+    "git_branch": "$(git rev-parse --abbrev-ref HEAD)",
+    "built_by": "Jenkins CI",
+    "pipeline": "blog-app-pipeline"
+}
+VERSIONEOF
+                    
+                    # Generate MANIFEST file
+                    echo "Generating MANIFEST file..."
+                    cat > ${TEMP_ARTIFACT_DIR}/MANIFEST << MANIFESTEOF
+Blog Application Deployment Artifact
+=====================================
+
+Version: ${VERSION}
+Build Number: ${BUILD_NUMBER}
+Build Date: $(date)
+Git Commit: $(git rev-parse HEAD)
+Git Branch: $(git rev-parse --abbrev-ref HEAD)
+
+Contents:
+---------
+MANIFESTEOF
+                    
+                    # List contents for manifest
+                    (cd ${TEMP_ARTIFACT_DIR} && find . -type f | sort | sed 's/^/  /') >> ${TEMP_ARTIFACT_DIR}/MANIFEST
+                    
+                    # Create the ZIP artifact
+                    echo ""
+                    echo "=== Creating ZIP Artifact ==="
+                    (cd ${TEMP_ARTIFACT_DIR} && zip -r ${ARTIFACT_FILE} .)
+                    
+                    # Move artifact to artifact directory
+                    mv ${TEMP_ARTIFACT_DIR}/${ARTIFACT_FILE} ${ARTIFACT_DIR}/
+                    
+                    # Clean up temp directory
+                    rm -rf ${TEMP_ARTIFACT_DIR}
+                    
+                    # Generate artifact README
+                    echo "Generating artifact README..."
+                    cat > ${ARTIFACT_DIR}/README.md << ARTIFACTREADME
+# Jenkins Pipeline - Deployment Artifacts
+
+This directory contains deployment-ready artifacts generated by the Jenkins CI/CD pipeline.
+
+## Versioning Scheme
+
+Artifacts use semantic versioning in the format: \`major.minor.changelist\`
+
+- **Major**: Major version (breaking changes)
+- **Minor**: Minor version (new features, backward compatible)
+- **Changelist**: Jenkins build number (incremental)
+
+## Current Artifact
+
+| Property | Value |
+|----------|-------|
+| Version | ${VERSION} |
+| Filename | ${ARTIFACT_FILE} |
+| Build Number | ${BUILD_NUMBER} |
+| Build Date | $(date) |
+| Git Commit | $(git rev-parse HEAD) |
+
+## Artifact Contents
+
+The ZIP artifact contains:
+- Python source files (\*.py)
+- Templates (templates/)
+- Static files (static/)
+- Requirements (requirements.txt)
+- Configuration files
+- VERSION file (JSON metadata)
+- MANIFEST file (contents listing)
+
+## How to Deploy
+
+1. Download the artifact ZIP file
+2. Extract to your deployment directory
+3. Create virtual environment: \`python3 -m venv venv\`
+4. Activate: \`source venv/bin/activate\`
+5. Install dependencies: \`pip install -r requirements.txt\`
+6. Configure environment variables
+7. Start the application
+
+## Previous Artifacts
+
+ARTIFACTREADME
+                    
+                    # List existing artifacts
+                    echo "" >> ${ARTIFACT_DIR}/README.md
+                    echo "| Version | Filename | Size |" >> ${ARTIFACT_DIR}/README.md
+                    echo "|---------|----------|------|" >> ${ARTIFACT_DIR}/README.md
+                    
+                    for artifact in ${ARTIFACT_DIR}/*.zip; do
+                        if [ -f "$artifact" ]; then
+                            artifact_name=$(basename "$artifact")
+                            artifact_size=$(du -h "$artifact" | cut -f1)
+                            artifact_version=$(echo "$artifact_name" | sed 's/blog-app-\\(.*\\)\\.zip/\\1/')
+                            echo "| ${artifact_version} | ${artifact_name} | ${artifact_size} |" >> ${ARTIFACT_DIR}/README.md
+                        fi
+                    done
+                    
+                    echo "" >> ${ARTIFACT_DIR}/README.md
+                    echo "## Last Updated" >> ${ARTIFACT_DIR}/README.md
+                    echo "" >> ${ARTIFACT_DIR}/README.md
+                    echo "**Timestamp**: $(date)" >> ${ARTIFACT_DIR}/README.md
+                    echo "" >> ${ARTIFACT_DIR}/README.md
+                    echo "**Build Number**: ${BUILD_NUMBER}" >> ${ARTIFACT_DIR}/README.md
+                    
+                    # Show artifact info
+                    echo ""
+                    echo "=== Artifact Generated ==="
+                    echo "Location: ${ARTIFACT_DIR}/${ARTIFACT_FILE}"
+                    ls -lh ${ARTIFACT_DIR}/${ARTIFACT_FILE}
+                    echo ""
+                    echo "Contents of ${ARTIFACT_DIR}:"
+                    ls -la ${ARTIFACT_DIR}/ | sed 's/^/  /'
+                    echo ""
+                    echo "✅ Deployment artifact generated successfully: ${ARTIFACT_FILE}"
+                '''
+                
+                // Archive the artifact in Jenkins
+                archiveArtifacts artifacts: 'artifacts/jenkins/*.zip', fingerprint: true
+            }
+        }
+        
+        stage('Commit Documentation and Artifacts to GitHub') {
+            steps {
+                echo '📤 Committing documentation and artifacts to GitHub with retry logic...'
+                sh '''
+                    echo "=== Committing Documentation and Artifacts with Retry Logic ==="
                     
                     # Function to attempt commit and push
                     attempt_push() {
@@ -442,19 +645,22 @@ DOCREADME
                             else
                                 echo "⚠️  Rebase had conflicts, attempting to resolve..."
                                 
-                                # Check if conflicts are in our documentation path
+                                # Check if conflicts are in our paths
                                 CONFLICTS=$(git diff --name-only --diff-filter=U 2>/dev/null || echo "")
                                 echo "Conflicts in: $CONFLICTS"
                                 
-                                if echo "$CONFLICTS" | grep -q "documentations/jenkins-doc/"; then
-                                    echo "Conflict in jenkins-doc, using our version..."
-                                    git checkout --ours documentations/jenkins-doc/
-                                    git add documentations/jenkins-doc/
+                                # Resolve conflicts in our directories
+                                if echo "$CONFLICTS" | grep -qE "documentations/jenkins-doc/|artifacts/jenkins/"; then
+                                    echo "Conflict in jenkins paths, using our version..."
+                                    git checkout --ours documentations/jenkins-doc/ 2>/dev/null || true
+                                    git checkout --ours artifacts/jenkins/ 2>/dev/null || true
+                                    git add documentations/jenkins-doc/ 2>/dev/null || true
+                                    git add artifacts/jenkins/ 2>/dev/null || true
                                     git rebase --continue || {
                                         git rebase --skip 2>/dev/null || true
                                     }
                                 else
-                                    echo "Conflicts outside our documentation path, aborting rebase..."
+                                    echo "Conflicts outside our paths, aborting rebase..."
                                     git rebase --abort
                                     return 1
                                 fi
@@ -463,36 +669,48 @@ DOCREADME
                             echo "✅ Already up to date with remote"
                         fi
                         
-                        # Check if documentation files exist and were modified
-                        if [ ! -d "${DOC_DIR}" ] || [ ! "$(ls -A ${DOC_DIR})" ]; then
-                            echo "⚠️  No documentation files found to commit"
-                            return 0
+                        # Check if files exist
+                        HAS_CHANGES=false
+                        
+                        if [ -d "${DOC_DIR}" ] && [ "$(ls -A ${DOC_DIR} 2>/dev/null)" ]; then
+                            git add ${DOC_DIR}/
+                            HAS_CHANGES=true
                         fi
                         
-                        # Add documentation files
-                        git add ${DOC_DIR}/
+                        if [ -d "${ARTIFACT_DIR}" ] && [ "$(ls -A ${ARTIFACT_DIR} 2>/dev/null)" ]; then
+                            git add ${ARTIFACT_DIR}/
+                            HAS_CHANGES=true
+                        fi
+                        
+                        if [ "$HAS_CHANGES" = false ]; then
+                            echo "⚠️  No files found to commit"
+                            return 0
+                        fi
                         
                         # Check if there are staged changes
                         if git diff --cached --quiet; then
-                            echo "ℹ️  No changes to documentation - skipping commit"
+                            echo "ℹ️  No changes to commit - skipping"
                             return 0
                         fi
                         
+                        # Define version for commit message
+                        VERSION="${VERSION_MAJOR}.${VERSION_MINOR}.${BUILD_NUMBER}"
+                        
                         # Commit changes
-                        echo "Committing documentation changes..."
-                        git commit -m "docs(jenkins): Update Pyreverse UML documentation [Build #${BUILD_NUMBER}]
+                        echo "Committing changes..."
+                        git commit -m "build(jenkins): Add artifact v${VERSION} and update documentation [Build #${BUILD_NUMBER}]
 
-                        Generated by Jenkins Pipeline
-                        - Class diagrams
-                        - Package diagrams
-                        - PNG and SVG formats
+Generated by Jenkins Pipeline:
+- Deployment artifact: blog-app-${VERSION}.zip
+- UML documentation updates
+- Class and package diagrams
 
-                        [skip ci]"
+[skip ci]"
                         
                         # Push to repository
                         echo "Pushing to repository..."
                         if git push https://${GITHUB_TOKEN}@github.com/${GITHUB_REPO}.git HEAD:main; then
-                            echo "✅ Successfully pushed documentation"
+                            echo "✅ Successfully pushed"
                             return 0
                         else
                             echo "❌ Push failed"
@@ -522,16 +740,16 @@ DOCREADME
                     if [ "$SUCCESS" = true ]; then
                         echo ""
                         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-                        echo "✅ Documentation successfully committed and pushed"
+                        echo "✅ Documentation and artifacts successfully committed and pushed"
                         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
                     else
                         echo ""
                         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-                        echo "⚠️  Failed to push documentation after ${MAX_RETRIES} attempts"
+                        echo "⚠️  Failed to push after ${MAX_RETRIES} attempts"
                         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
                         echo ""
                         echo "This is not critical - continuing with deployment"
-                        echo "Documentation can be manually committed later if needed"
+                        echo "Artifacts are still archived in Jenkins"
                     fi
                 '''
             }
@@ -777,6 +995,7 @@ echo "Timestamp: \$(date)"
         success {
             echo '✅ Pipeline completed successfully!'
             echo "Build #${BUILD_NUMBER} - SUCCESS"
+            echo "Artifact: blog-app-${VERSION_MAJOR}.${VERSION_MINOR}.${BUILD_NUMBER}.zip"
         }
         failure {
             echo '❌ Pipeline failed!'
