@@ -38,13 +38,14 @@ The ZIP artifact contains:
 |---------|----------|------|------|
 | 1.0.24 | blog-app-1.0.24.zip | 20K | 2025-12-03 |
 | 1.0.25 | blog-app-1.0.25.zip | 20K | 2025-12-03 |
+| 1.0.26 | blog-app-1.0.26.zip | 20K | 2025-12-03 |
 
 ## Current Build
 
 | Property | Value |
 |----------|-------|
-| Version | 1.0.25 |
-| Filename | blog-app-1.0.25.zip |
-| GitHub Run | #25 |
-| Commit | 01220b830884be018dd517d6fa4f966307294d5d |
-| Timestamp | Wed Dec  3 20:08:43 UTC 2025 |
+| Version | 1.0.26 |
+| Filename | blog-app-1.0.26.zip |
+| GitHub Run | #26 |
+| Commit | 791f8b0e12e0f7b9907464e0fa7073871cb2aa56 |
+| Timestamp | Wed Dec  3 23:14:25 UTC 2025 |
