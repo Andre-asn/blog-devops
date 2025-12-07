@@ -122,35 +122,11 @@ fi
 # GitHub Actions Documentation
 if [ -f "docs/actions-doc/README.md" ]; then
     add_doc_file "docs/actions-doc/README.md" "GitHub Actions - UML Documentation"
-    
-    # Add information about diagrams
-    if [ -f "docs/actions-doc/classes_blog_app.png" ]; then
-        echo "\\subsubsection{Class Diagram}" >> ${DOC_SECTION_FILE}
-        echo "The class diagram is available as: \\texttt{classes\\_blog\\_app.png}" >> ${DOC_SECTION_FILE}
-        echo "" >> ${DOC_SECTION_FILE}
-    fi
-    if [ -f "docs/actions-doc/packages_blog_app.png" ]; then
-        echo "\\subsubsection{Package Diagram}" >> ${DOC_SECTION_FILE}
-        echo "The package diagram is available as: \\texttt{packages\\_blog\\_app.png}" >> ${DOC_SECTION_FILE}
-        echo "" >> ${DOC_SECTION_FILE}
-    fi
 fi
 
 # Jenkins Documentation
 if [ -f "docs/jenkins-doc/README.md" ]; then
     add_doc_file "docs/jenkins-doc/README.md" "Jenkins - UML Documentation"
-    
-    # Add information about diagrams
-    if [ -f "docs/jenkins-doc/classes_blog_app.png" ]; then
-        echo "\\subsubsection{Class Diagram}" >> ${DOC_SECTION_FILE}
-        echo "The class diagram is available as: \\texttt{classes\\_blog\\_app.png}" >> ${DOC_SECTION_FILE}
-        echo "" >> ${DOC_SECTION_FILE}
-    fi
-    if [ -f "docs/jenkins-doc/packages_blog_app.png" ]; then
-        echo "\\subsubsection{Package Diagram}" >> ${DOC_SECTION_FILE}
-        echo "The package diagram is available as: \\texttt{packages\\_blog\\_app.png}" >> ${DOC_SECTION_FILE}
-        echo "" >> ${DOC_SECTION_FILE}
-    fi
 fi
 
 # Create commit changes section
