@@ -53,3 +53,13 @@ venv/
 htmlcov/
 .coverage
 *.egg-info/
+
+# LaTeX auxiliary files (but keep PDF)
+documentation/*.aux
+documentation/*.log
+documentation/*.toc
+documentation/*.out
+documentation/*.fdb_latexmk
+documentation/*.fls
+documentation/*.synctex.gz
+# Keep PDF: documentation/*.pdf

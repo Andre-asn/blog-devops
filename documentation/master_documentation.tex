@@ -1,0 +1,137 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{geometry}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{fancyhdr}
+\usepackage{lastpage}
+\usepackage{datetime}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{titlesec}
+\usepackage{tocloft}
+
+% Page geometry
+\geometry{margin=1in}
+
+% Hyperref setup
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    filecolor=magenta,      
+    urlcolor=cyan,
+    pdftitle={Blog DevOps Project Documentation},
+    pdfauthor={DevOps Team}
+}
+
+% Header and footer
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{Blog DevOps Project}
+\fancyhead[R]{Documentation}
+\fancyfoot[C]{\thepage\ of \pageref{LastPage}}
+\fancyfoot[R]{Commit: \COMMITHASH}
+
+% Title formatting
+\titleformat{\section}{\Large\bfseries}{\thesection}{1em}{}
+\titleformat{\subsection}{\large\bfseries}{\thesubsection}{1em}{}
+
+% Code listing style
+\lstset{
+    basicstyle=\ttfamily\small,
+    breaklines=true,
+    frame=single,
+    backgroundcolor=\color{gray!10}
+}
+
+% Variables (will be replaced by script)
+\newcommand{\COMMITHASH}{PLACEHOLDER_COMMIT_HASH}
+\newcommand{\COMMITDATE}{PLACEHOLDER_COMMIT_DATE}
+\newcommand{\COMMITAUTHOR}{PLACEHOLDER_COMMIT_AUTHOR}
+\newcommand{\COMMITMESSAGE}{PLACEHOLDER_COMMIT_MESSAGE}
+
+\begin{document}
+
+% Cover Page
+\begin{titlepage}
+    \centering
+    \vspace*{2cm}
+    
+    {\Huge\bfseries Blog DevOps Project}\\[1cm]
+    {\Large\bfseries Master Documentation}\\[2cm]
+    
+    \vfill
+    
+    {\large Commit Hash:}\\[0.5cm]
+    {\Huge\ttfamily \COMMITHASH}\\[1cm]
+    
+    {\large Commit Date: \COMMITDATE}\\[0.5cm]
+    {\large Author: \COMMITAUTHOR}\\[0.5cm]
+    {\large Message: \COMMITMESSAGE}\\[1cm]
+    
+    \vfill
+    
+    {\large Generated: \today\ \currenttime}\\[0.5cm]
+    {\large Version: 1.0}\\[1cm]
+    
+    \vfill
+    
+    % Optional: Add logo if available
+    % \includegraphics[width=0.3\textwidth]{logo.png}
+    
+\end{titlepage}
+
+% Table of Contents
+\newpage
+\tableofcontents
+\newpage
+
+% Introduction
+\section{Introduction}
+This document contains the complete documentation for the Blog DevOps Project. It is automatically generated and updated on each commit to the repository.
+
+\subsection{Project Overview}
+The Blog DevOps Project is a full-stack blog application demonstrating complete DevOps practices including CI/CD pipelines, automated testing, deployment, monitoring, and infrastructure as Code.
+
+\subsection{Documentation Structure}
+This master documentation includes:
+\begin{itemize}
+    \item Project architecture and design
+    \item CI/CD pipeline documentation
+    \item Infrastructure setup guides
+    \item API documentation
+    \item Deployment procedures
+    \item Monitoring and observability
+    \item Change log
+\end{itemize}
+
+% Commit History Section
+\section{Commit History}
+\subsection{Latest Commit}
+\begin{itemize}
+    \item \textbf{Hash}: \COMMITHASH
+    \item \textbf{Date}: \COMMITDATE
+    \item \textbf{Author}: \COMMITAUTHOR
+    \item \textbf{Message}: \COMMITMESSAGE
+\end{itemize}
+
+% PLACEHOLDER_COMMIT_CHANGES
+% This section will be populated by the script with commit changes
+
+% Main Documentation Sections
+\section{Project Documentation}
+
+% PLACEHOLDER_DOCUMENTATION_CONTENT
+% This section will be populated with all documentation content
+
+% Appendices
+\appendix
+\section{Appendix A: Configuration Files}
+% PLACEHOLDER_CONFIG_FILES
+
+\section{Appendix B: Pipeline Logs}
+% PLACEHOLDER_PIPELINE_LOGS
+
+\end{document}
+
