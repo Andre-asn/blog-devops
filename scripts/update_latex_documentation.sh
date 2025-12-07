@@ -66,12 +66,44 @@ for doc_file in docs/*.md README.md; do
         
         echo "\\subsection{${FILE_NAME}}" >> ${DOC_SECTION_FILE}
         echo "" >> ${DOC_SECTION_FILE}
-        echo "\\begin{verbatim}" >> ${DOC_SECTION_FILE}
+        echo "\\begin{lstlisting}[breaklines=true,breakatwhitespace=true]" >> ${DOC_SECTION_FILE}
         
-        # Read file content (verbatim displays as-is, no escaping needed)
-        cat "$doc_file" >> ${DOC_SECTION_FILE}
+        # Read file content and filter out problematic Unicode characters
+        # Use Python for reliable Unicode filtering
+        python3 << PYTHON_FILTER
+import sys
+import re
+
+# Read the file
+with open('$doc_file', 'r', encoding='utf-8', errors='ignore') as f:
+    content = f.read()
+
+# Remove box-drawing characters (common in markdown)
+box_chars = r'[┌┐└┘├┤┬┴┼─│╔╗╚╝╠╣╦╩╬═║━┃┏┓┗┛┣┫┳┻╋]'
+content = re.sub(box_chars, ' ', content)
+
+# Remove emojis and other problematic Unicode
+# Keep only ASCII printable characters and common whitespace
+filtered_content = ''
+for char in content:
+    if ord(char) < 128 and (char.isprintable() or char.isspace()):
+        filtered_content += char
+    else:
+        filtered_content += ' '
+
+# Clean up multiple spaces but preserve line breaks
+lines = filtered_content.split('\n')
+cleaned_lines = []
+for line in lines:
+    cleaned_line = re.sub(r' +', ' ', line)
+    cleaned_lines.append(cleaned_line)
+content = '\n'.join(cleaned_lines)
+
+sys.stdout.write(content)
+PYTHON_FILTER
+        >> ${DOC_SECTION_FILE}
         
-        echo "\\end{verbatim}" >> ${DOC_SECTION_FILE}
+        echo "\\end{lstlisting}" >> ${DOC_SECTION_FILE}
         echo "" >> ${DOC_SECTION_FILE}
         echo "\\newpage" >> ${DOC_SECTION_FILE}
         echo "" >> ${DOC_SECTION_FILE}
