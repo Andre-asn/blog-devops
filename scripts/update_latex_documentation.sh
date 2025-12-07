@@ -12,13 +12,8 @@ COMMIT_DATE=$(git log -1 --format=%ci HEAD)
 COMMIT_AUTHOR=$(git log -1 --format=%an HEAD)
 COMMIT_MESSAGE=$(git log -1 --format=%B HEAD | head -1)
 
-# Get commit changes
+# Get commit changes (will be written directly to file later)
 echo "📋 Gathering commit changes..."
-if git rev-parse HEAD~1 >/dev/null 2>&1; then
-    COMMIT_CHANGES=$(git diff HEAD~1 HEAD --name-status | awk '{print "\\item " $0}')
-else
-    COMMIT_CHANGES="\\item Initial commit"
-fi
 
 # Create documentation directory if it doesn't exist
 mkdir -p ${OUTPUT_DIR}
@@ -73,8 +68,8 @@ for doc_file in docs/*.md README.md; do
         echo "" >> ${DOC_SECTION_FILE}
         echo "\\begin{verbatim}" >> ${DOC_SECTION_FILE}
         
-        # Read and escape file content
-        cat "$doc_file" | escape_latex_safe >> ${DOC_SECTION_FILE}
+        # Read file content (verbatim displays as-is, no escaping needed)
+        cat "$doc_file" >> ${DOC_SECTION_FILE}
         
         echo "\\end{verbatim}" >> ${DOC_SECTION_FILE}
         echo "" >> ${DOC_SECTION_FILE}
@@ -86,7 +81,17 @@ done
 # Create commit changes section
 echo "\\subsection{Changes in This Commit}" > ${CHANGES_SECTION_FILE}
 echo "\\begin{itemize}" >> ${CHANGES_SECTION_FILE}
-echo "${COMMIT_CHANGES}" >> ${CHANGES_SECTION_FILE}
+# Write commit changes line by line to avoid shell expansion issues
+if git rev-parse HEAD~1 >/dev/null 2>&1; then
+    git diff HEAD~1 HEAD --name-status | while IFS=$'\t' read -r status file; do
+        # Escape LaTeX special characters in filename
+        ESCAPED_FILE=$(echo "$file" | sed 's/\\/\\textbackslash{}/g' | sed 's/{/\\{/g' | sed 's/}/\\}/g' | sed 's/_/\\_/g' | sed 's/#/\\#/g' | sed 's/\$/\\\$/g' | sed 's/&/\\&/g' | sed 's/%/\\%/g')
+        # Wrap status and filename in texttt to prevent math mode interpretation
+        echo "\\item \\texttt{${status}} \\texttt{${ESCAPED_FILE}}" >> ${CHANGES_SECTION_FILE}
+    done
+else
+    echo "\\item Initial commit" >> ${CHANGES_SECTION_FILE}
+fi
 echo "\\end{itemize}" >> ${CHANGES_SECTION_FILE}
 echo "" >> ${CHANGES_SECTION_FILE}
 
