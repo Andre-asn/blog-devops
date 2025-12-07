@@ -25,7 +25,7 @@ pipeline {
         PATH = "/opt/homebrew/bin:/usr/local/bin:${env.PATH}"
         
         // Documentation directory
-        DOC_DIR = 'documentations/jenkins-doc'
+        DOC_DIR = 'docs/jenkins-doc'
         
         // Artifact configuration
         ARTIFACT_DIR = 'artifacts/jenkins'
@@ -641,11 +641,11 @@ ARTIFACTREADME
                                 echo "Conflicts in: $CONFLICTS"
                                 
                                 # Resolve conflicts in our directories
-                                if echo "$CONFLICTS" | grep -qE "documentations/jenkins-doc/|artifacts/jenkins/"; then
+                                if echo "$CONFLICTS" | grep -qE "docs/jenkins-doc/|artifacts/jenkins/"; then
                                     echo "Conflict in jenkins paths, using our version..."
-                                    git checkout --ours documentations/jenkins-doc/ 2>/dev/null || true
+                                    git checkout --ours docs/jenkins-doc/ 2>/dev/null || true
                                     git checkout --ours artifacts/jenkins/ 2>/dev/null || true
-                                    git add documentations/jenkins-doc/ 2>/dev/null || true
+                                    git add docs/jenkins-doc/ 2>/dev/null || true
                                     git add artifacts/jenkins/ 2>/dev/null || true
                                     git rebase --continue || {
                                         git rebase --skip 2>/dev/null || true

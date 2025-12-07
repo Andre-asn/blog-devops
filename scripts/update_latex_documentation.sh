@@ -58,11 +58,14 @@ sed "s@PLACEHOLDER_COMMIT_MESSAGE@${COMMIT_MESSAGE}@g" > ${TEMP_FILE}
 echo "📚 Collecting documentation content..."
 echo "" > ${DOC_SECTION_FILE}
 
-# Collect all markdown documentation files
-for doc_file in docs/*.md README.md; do
+# Function to add documentation file to LaTeX
+add_doc_file() {
+    local doc_file="$1"
+    local section_title="$2"
+    
     if [ -f "$doc_file" ] && [ -s "$doc_file" ]; then
         echo "  Processing: $doc_file"
-        FILE_NAME=$(basename "$doc_file" .md | sed 's/_/\\_/g' | sed 's/-/ /g')
+        FILE_NAME=$(echo "$section_title" | sed 's/_/\\_/g' | sed 's/-/ /g')
         
         echo "\\subsection{${FILE_NAME}}" >> ${DOC_SECTION_FILE}
         echo "" >> ${DOC_SECTION_FILE}
@@ -108,7 +111,47 @@ PYTHON_FILTER
         echo "\\newpage" >> ${DOC_SECTION_FILE}
         echo "" >> ${DOC_SECTION_FILE}
     fi
-done
+}
+
+# Include main README.md
+if [ -f "README.md" ]; then
+    add_doc_file "README.md" "Project README"
+fi
+
+# Include documentation from docs/ directory
+# GitHub Actions Documentation
+if [ -f "docs/actions-doc/README.md" ]; then
+    add_doc_file "docs/actions-doc/README.md" "GitHub Actions - UML Documentation"
+    
+    # Add information about diagrams
+    if [ -f "docs/actions-doc/classes_blog_app.png" ]; then
+        echo "\\subsubsection{Class Diagram}" >> ${DOC_SECTION_FILE}
+        echo "The class diagram is available as: \\texttt{classes\\_blog\\_app.png}" >> ${DOC_SECTION_FILE}
+        echo "" >> ${DOC_SECTION_FILE}
+    fi
+    if [ -f "docs/actions-doc/packages_blog_app.png" ]; then
+        echo "\\subsubsection{Package Diagram}" >> ${DOC_SECTION_FILE}
+        echo "The package diagram is available as: \\texttt{packages\\_blog\\_app.png}" >> ${DOC_SECTION_FILE}
+        echo "" >> ${DOC_SECTION_FILE}
+    fi
+fi
+
+# Jenkins Documentation
+if [ -f "docs/jenkins-doc/README.md" ]; then
+    add_doc_file "docs/jenkins-doc/README.md" "Jenkins - UML Documentation"
+    
+    # Add information about diagrams
+    if [ -f "docs/jenkins-doc/classes_blog_app.png" ]; then
+        echo "\\subsubsection{Class Diagram}" >> ${DOC_SECTION_FILE}
+        echo "The class diagram is available as: \\texttt{classes\\_blog\\_app.png}" >> ${DOC_SECTION_FILE}
+        echo "" >> ${DOC_SECTION_FILE}
+    fi
+    if [ -f "docs/jenkins-doc/packages_blog_app.png" ]; then
+        echo "\\subsubsection{Package Diagram}" >> ${DOC_SECTION_FILE}
+        echo "The package diagram is available as: \\texttt{packages\\_blog\\_app.png}" >> ${DOC_SECTION_FILE}
+        echo "" >> ${DOC_SECTION_FILE}
+    fi
+fi
 
 # Create commit changes section
 echo "\\subsection{Changes in This Commit}" > ${CHANGES_SECTION_FILE}

@@ -93,7 +93,7 @@ blog-devops/
 ├── templates/                # HTML templates
 ├── static/                   # Static assets
 ├── tests/                    # Test files
-├── documentations/
+├── docs/
 │   ├── actions-doc/          # GitHub Actions generated docs
 │   └── jenkins-doc/          # Jenkins generated docs
 └── artifacts/
@@ -476,8 +476,8 @@ Both pipelines generate UML documentation using Pyreverse and Graphviz.
 
 | Pipeline | Directory |
 |----------|-----------|
-| GitHub Actions | `documentations/actions-doc/` |
-| Jenkins | `documentations/jenkins-doc/` |
+| GitHub Actions | `docs/actions-doc/` |
+| Jenkins | `docs/jenkins-doc/` |
 
 ### Manual Generation
 
