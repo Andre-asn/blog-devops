@@ -38,9 +38,12 @@ The ZIP artifact contains:
 | Version | Filename | Size |
 |---------|----------|------|
 | 1.0.24 | blog-app-1.0.24.zip | 8.0K |
+| 1.0.25 | blog-app-1.0.25.zip | 8.0K |
+| 1.0.26 | blog-app-1.0.26.zip | 8.0K |
+| 1.0.27 | blog-app-1.0.27.zip | 8.0K |
 
 ## Last Updated
 
-**Timestamp**: Wed Dec  3 15:07:43 EST 2025
+**Timestamp**: Wed Dec  3 19:03:45 EST 2025
 
-**Build Number**: 24
+**Build Number**: 27
