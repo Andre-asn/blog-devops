@@ -51,10 +51,10 @@
 }
 
 % Variables (will be replaced by script)
-\newcommand{\COMMITHASH}{PLACEHOLDER_COMMIT_HASH}
-\newcommand{\COMMITDATE}{PLACEHOLDER_COMMIT_DATE}
-\newcommand{\COMMITAUTHOR}{PLACEHOLDER_COMMIT_AUTHOR}
-\newcommand{\COMMITMESSAGE}{PLACEHOLDER_COMMIT_MESSAGE}
+\newcommand{\COMMITHASH}{7d9a664}
+\newcommand{\COMMITDATE}{2025-12-07 18:47:04 -0500}
+\newcommand{\COMMITAUTHOR}{Andre Santiago-Neyra}
+\newcommand{\COMMITMESSAGE}{docs: Refactor documentation paths and update scripts for consistency}
 
 \begin{document}
 
@@ -121,7 +121,35 @@ This master documentation includes:
     \item \textbf{Message}: \COMMITMESSAGE
 \end{itemize}
 
-% PLACEHOLDER_COMMIT_CHANGES
+\subsection{Changes in This Commit}
+\begin{itemize}
+\item \texttt{M} \texttt{.github/workflows/ci-cd.yml}
+\item \texttt{M} \texttt{Jenkinsfile}
+\item \texttt{M} \texttt{README.md}
+\item \texttt{D} \texttt{docs/DEMO\_PRESENTATION.md}
+\item \texttt{D} \texttt{docs/LOAD\_BALANCER\_SETUP.md}
+\item \texttt{D} \texttt{docs/QUICK\_REFERENCE.md}
+\item \texttt{D} \texttt{docs/SWOT\_DETAILED.md}
+\item \texttt{D} \texttt{docs/TALKING\_POINTS.md}
+\item \texttt{R100} \texttt{documentations/actions-doc/README.md	docs/actions-doc/README.md}
+\item \texttt{R100} \texttt{documentations/actions-doc/classes\_blog\_app.dot	docs/actions-doc/classes\_blog\_app.dot}
+\item \texttt{R100} \texttt{documentations/actions-doc/classes\_blog\_app.png	docs/actions-doc/classes\_blog\_app.png}
+\item \texttt{R100} \texttt{documentations/actions-doc/classes\_blog\_app.svg	docs/actions-doc/classes\_blog\_app.svg}
+\item \texttt{R100} \texttt{documentations/actions-doc/packages\_blog\_app.dot	docs/actions-doc/packages\_blog\_app.dot}
+\item \texttt{R100} \texttt{documentations/actions-doc/packages\_blog\_app.png	docs/actions-doc/packages\_blog\_app.png}
+\item \texttt{R100} \texttt{documentations/actions-doc/packages\_blog\_app.svg	docs/actions-doc/packages\_blog\_app.svg}
+\item \texttt{R100} \texttt{documentations/jenkins-doc/README.md	docs/jenkins-doc/README.md}
+\item \texttt{R100} \texttt{documentations/jenkins-doc/classes\_blog\_app.dot	docs/jenkins-doc/classes\_blog\_app.dot}
+\item \texttt{R100} \texttt{documentations/jenkins-doc/classes\_blog\_app.png	docs/jenkins-doc/classes\_blog\_app.png}
+\item \texttt{R100} \texttt{documentations/jenkins-doc/classes\_blog\_app.svg	docs/jenkins-doc/classes\_blog\_app.svg}
+\item \texttt{R100} \texttt{documentations/jenkins-doc/packages\_blog\_app.dot	docs/jenkins-doc/packages\_blog\_app.dot}
+\item \texttt{R100} \texttt{documentations/jenkins-doc/packages\_blog\_app.png	docs/jenkins-doc/packages\_blog\_app.png}
+\item \texttt{R100} \texttt{documentations/jenkins-doc/packages\_blog\_app.svg	docs/jenkins-doc/packages\_blog\_app.svg}
+\item \texttt{M} \texttt{documentation/master\_documentation.tex}
+\item \texttt{M} \texttt{scripts/update\_latex\_documentation.sh}
+\end{itemize}
+
+
 % This section will be populated by the script with commit changes
 
 % Main Documentation Sections
@@ -129,7 +157,41 @@ This master documentation includes:
 
 This section contains automatically generated documentation including UML diagrams, architecture documentation, and pipeline-generated content.
 
-% PLACEHOLDER_DOCUMENTATION_CONTENT
+
+\subsection{Project README}
+
+\begin{lstlisting}[breaklines=true,breakatwhitespace=true]
+\end{lstlisting}
+
+\newpage
+
+\subsection{GitHub Actions   UML Documentation}
+
+\begin{lstlisting}[breaklines=true,breakatwhitespace=true]
+\end{lstlisting}
+
+\newpage
+
+\subsubsection{Class Diagram}
+The class diagram is available as: \texttt{classes\_blog\_app.png}
+
+\subsubsection{Package Diagram}
+The package diagram is available as: \texttt{packages\_blog\_app.png}
+
+\subsection{Jenkins   UML Documentation}
+
+\begin{lstlisting}[breaklines=true,breakatwhitespace=true]
+\end{lstlisting}
+
+\newpage
+
+\subsubsection{Class Diagram}
+The class diagram is available as: \texttt{classes\_blog\_app.png}
+
+\subsubsection{Package Diagram}
+The package diagram is available as: \texttt{packages\_blog\_app.png}
+
+
 % This section will be populated with documentation from docs/ directory
 % Content includes:
 % - README.md from project root
