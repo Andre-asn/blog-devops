@@ -1059,8 +1059,23 @@ jobs:
         env:
           COMMIT_HASH: ${{ github.sha }}
         run: |
+          echo "=== LaTeX Documentation Update ==="
+          echo "Triggered by commit: ${COMMIT_HASH}"
+          echo "Current HEAD: $(git rev-parse HEAD)"
+          echo "Commit short: $(echo ${COMMIT_HASH} | cut -c1-7)"
+          echo ""
           chmod +x scripts/update_latex_documentation.sh
           ./scripts/update_latex_documentation.sh
+          echo ""
+          echo "=== Verification ==="
+          echo "Checking generated LaTeX file..."
+          if grep -q "PLACEHOLDER_COMMIT_HASH" documentation/master_documentation.tex; then
+            echo "⚠️  WARNING: Placeholders still present in LaTeX file!"
+            exit 1
+          else
+            echo "✅ Placeholders replaced successfully"
+            echo "Commit hash in file: $(grep 'newcommand{\\COMMITHASH}' documentation/master_documentation.tex | head -1)"
+          fi
       
       - name: Compile LaTeX to PDF
         run: |
