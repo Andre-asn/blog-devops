@@ -7,36 +7,17 @@ echo "📝 Updating LaTeX master documentation..."
 LATEX_FILE="documentation/master_documentation.tex"
 OUTPUT_DIR="documentation"
 
-# Use COMMIT_HASH from environment if provided (from GitHub Actions), otherwise use HEAD
-if [ -n "${COMMIT_HASH}" ]; then
-    echo "Using commit hash from environment: ${COMMIT_HASH}"
-    echo "Verifying commit exists..."
-    if git rev-parse --verify "${COMMIT_HASH}" >/dev/null 2>&1; then
-        COMMIT_SHORT=$(echo "${COMMIT_HASH}" | cut -c1-7)
-        COMMIT_DATE=$(git log -1 --format=%ci "${COMMIT_HASH}" 2>/dev/null || echo "Unknown")
-        COMMIT_AUTHOR=$(git log -1 --format=%an "${COMMIT_HASH}" 2>/dev/null || echo "Unknown")
-        COMMIT_MESSAGE=$(git log -1 --format=%B "${COMMIT_HASH}" 2>/dev/null | head -1 || echo "Unknown")
-        echo "✅ Commit found: ${COMMIT_SHORT}"
-        echo "   Date: ${COMMIT_DATE}"
-        echo "   Author: ${COMMIT_AUTHOR}"
-        echo "   Message: ${COMMIT_MESSAGE}"
-    else
-        echo "⚠️  Warning: Commit ${COMMIT_HASH} not found, falling back to HEAD"
-        COMMIT_HASH=$(git rev-parse HEAD)
-        COMMIT_SHORT=$(git rev-parse --short=7 HEAD)
-        COMMIT_DATE=$(git log -1 --format=%ci HEAD)
-        COMMIT_AUTHOR=$(git log -1 --format=%an HEAD)
-        COMMIT_MESSAGE=$(git log -1 --format=%B HEAD | head -1)
-    fi
-else
-    echo "Using commit hash from HEAD"
-    COMMIT_HASH=$(git rev-parse HEAD)
-    COMMIT_SHORT=$(git rev-parse --short=7 HEAD)
-    COMMIT_DATE=$(git log -1 --format=%ci HEAD)
-    COMMIT_AUTHOR=$(git log -1 --format=%an HEAD)
-    COMMIT_MESSAGE=$(git log -1 --format=%B HEAD | head -1)
-    echo "HEAD commit: ${COMMIT_SHORT}"
-fi
+# Use HEAD commit (the commit the bot is currently on)
+COMMIT_HASH=$(git rev-parse HEAD)
+COMMIT_SHORT=$(git rev-parse --short=7 HEAD)
+COMMIT_DATE=$(git log -1 --format=%ci HEAD)
+COMMIT_AUTHOR=$(git log -1 --format=%an HEAD)
+COMMIT_MESSAGE=$(git log -1 --format=%B HEAD | head -1)
+
+echo "Using commit hash from HEAD: ${COMMIT_SHORT}"
+echo "   Date: ${COMMIT_DATE}"
+echo "   Author: ${COMMIT_AUTHOR}"
+echo "   Message: ${COMMIT_MESSAGE}"
 
 # Get commit changes (will be written directly to file later)
 echo "📋 Gathering commit changes..."
@@ -159,11 +140,8 @@ fi
 echo "\\subsection{Changes in This Commit}" > ${CHANGES_SECTION_FILE}
 echo "\\begin{itemize}" >> ${CHANGES_SECTION_FILE}
 # Write commit changes line by line to avoid shell expansion issues
-# Use COMMIT_HASH if available (from GitHub Actions), otherwise use HEAD
-COMMIT_TO_USE="${COMMIT_HASH:-HEAD}"
-if git rev-parse "${COMMIT_TO_USE}^" >/dev/null 2>&1; then
-    PARENT_COMMIT="${COMMIT_TO_USE}^"
-    git diff "${PARENT_COMMIT}" "${COMMIT_TO_USE}" --name-status | while IFS=$'\t' read -r status file; do
+if git rev-parse HEAD~1 >/dev/null 2>&1; then
+    git diff HEAD~1 HEAD --name-status | while IFS=$'\t' read -r status file; do
         # Escape LaTeX special characters in filename
         ESCAPED_FILE=$(echo "$file" | sed 's/\\/\\textbackslash{}/g' | sed 's/{/\\{/g' | sed 's/}/\\}/g' | sed 's/_/\\_/g' | sed 's/#/\\#/g' | sed 's/\$/\\\$/g' | sed 's/&/\\&/g' | sed 's/%/\\%/g')
         # Wrap status and filename in texttt to prevent math mode interpretation
