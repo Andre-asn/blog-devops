@@ -1078,16 +1078,21 @@ jobs:
           
           echo ""
           echo "=== Verification ==="
-          # Verify the file was updated
-          if grep -q "PLACEHOLDER_COMMIT_HASH" documentation/master_documentation.tex; then
-            echo "❌ ERROR: Placeholders still present in LaTeX file!"
+          # Verify the file was updated with the correct commit hash
+          EXPECTED_HASH=$(git rev-parse --short=7 HEAD)
+          ACTUAL_HASH=$(grep -m 1 "newcommand{\\\COMMITHASH}" documentation/master_documentation.tex | sed 's/.*{\([^}]*\)}.*/\1/')
+          
+          echo "Expected commit hash: ${EXPECTED_HASH}"
+          echo "Actual commit hash in file: ${ACTUAL_HASH}"
+          
+          if [ "${EXPECTED_HASH}" != "${ACTUAL_HASH}" ]; then
+            echo "❌ ERROR: Commit hash mismatch! File was not updated correctly."
+            echo "   Expected: ${EXPECTED_HASH}"
+            echo "   Found: ${ACTUAL_HASH}"
             exit 1
           fi
           
-          echo "Commit hash in template (after):"
-          grep -m 1 "newcommand{\\\COMMITHASH}" documentation/master_documentation.tex || echo "Not found"
-          echo ""
-          echo "✅ LaTeX file updated successfully"
+          echo "✅ LaTeX file updated successfully with commit ${EXPECTED_HASH}"
           
           # Show file modification time
           echo "File modification time:"

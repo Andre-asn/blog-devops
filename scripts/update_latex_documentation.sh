@@ -54,12 +54,42 @@ escape_latex_safe() {
     }'
 }
 
-# Replace placeholders in LaTeX file (using @ as delimiter to avoid conflicts)
-echo "🔄 Updating placeholders..."
-sed "s@PLACEHOLDER_COMMIT_HASH@${COMMIT_SHORT}@g" ${LATEX_FILE} | \
-sed "s@PLACEHOLDER_COMMIT_DATE@${COMMIT_DATE}@g" | \
-sed "s@PLACEHOLDER_COMMIT_AUTHOR@${COMMIT_AUTHOR}@g" | \
-sed "s@PLACEHOLDER_COMMIT_MESSAGE@${COMMIT_MESSAGE}@g" > ${TEMP_FILE}
+# Replace commit information in LaTeX file
+# Replace actual values in \newcommand lines (handles both placeholder and already-filled cases)
+echo "🔄 Updating commit information..."
+echo "   Current commit: ${COMMIT_SHORT}"
+echo "   Current date: ${COMMIT_DATE}"
+
+# Use awk for more reliable replacement of \newcommand values
+awk -v commit_hash="${COMMIT_SHORT}" \
+    -v commit_date="${COMMIT_DATE}" \
+    -v commit_author="${COMMIT_AUTHOR}" \
+    -v commit_message="${COMMIT_MESSAGE}" '
+{
+    # Replace placeholders first
+    gsub(/PLACEHOLDER_COMMIT_HASH/, commit_hash)
+    gsub(/PLACEHOLDER_COMMIT_DATE/, commit_date)
+    gsub(/PLACEHOLDER_COMMIT_AUTHOR/, commit_author)
+    gsub(/PLACEHOLDER_COMMIT_MESSAGE/, commit_message)
+    
+    # Replace actual values in \newcommand lines
+    # Match: \newcommand{\COMMITHASH}{anything}
+    if (match($0, /\\newcommand\{\\COMMITHASH\}\{[^}]+\}/)) {
+        $0 = substr($0, 1, RSTART-1) "\\newcommand{\\COMMITHASH}{" commit_hash "}" substr($0, RSTART+RLENGTH)
+    }
+    if (match($0, /\\newcommand\{\\COMMITDATE\}\{[^}]+\}/)) {
+        $0 = substr($0, 1, RSTART-1) "\\newcommand{\\COMMITDATE}{" commit_date "}" substr($0, RSTART+RLENGTH)
+    }
+    if (match($0, /\\newcommand\{\\COMMITAUTHOR\}\{[^}]+\}/)) {
+        $0 = substr($0, 1, RSTART-1) "\\newcommand{\\COMMITAUTHOR}{" commit_author "}" substr($0, RSTART+RLENGTH)
+    }
+    if (match($0, /\\newcommand\{\\COMMITMESSAGE\}\{[^}]+\}/)) {
+        $0 = substr($0, 1, RSTART-1) "\\newcommand{\\COMMITMESSAGE}{" commit_message "}" substr($0, RSTART+RLENGTH)
+    }
+    
+    print
+}
+' ${LATEX_FILE} > ${TEMP_FILE}
 
 # Collect documentation content
 echo "📚 Collecting documentation content..."
