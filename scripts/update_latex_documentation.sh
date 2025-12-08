@@ -140,13 +140,14 @@ fi
 echo "\\subsection{Changes in This Commit}" > ${CHANGES_SECTION_FILE}
 echo "\\begin{itemize}" >> ${CHANGES_SECTION_FILE}
 # Write commit changes line by line to avoid shell expansion issues
+# Use process substitution instead of pipe to avoid subshell issue
 if git rev-parse HEAD~1 >/dev/null 2>&1; then
-    git diff HEAD~1 HEAD --name-status | while IFS=$'\t' read -r status file; do
+    while IFS=$'\t' read -r status file; do
         # Escape LaTeX special characters in filename
         ESCAPED_FILE=$(echo "$file" | sed 's/\\/\\textbackslash{}/g' | sed 's/{/\\{/g' | sed 's/}/\\}/g' | sed 's/_/\\_/g' | sed 's/#/\\#/g' | sed 's/\$/\\\$/g' | sed 's/&/\\&/g' | sed 's/%/\\%/g')
         # Wrap status and filename in texttt to prevent math mode interpretation
         echo "\\item \\texttt{${status}} \\texttt{${ESCAPED_FILE}}" >> ${CHANGES_SECTION_FILE}
-    done
+    done < <(git diff HEAD~1 HEAD --name-status)
 else
     echo "\\item Initial commit" >> ${CHANGES_SECTION_FILE}
 fi
