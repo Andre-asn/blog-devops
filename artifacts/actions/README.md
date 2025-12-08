@@ -38,6 +38,7 @@ The ZIP artifact contains:
 |---------|----------|------|------|
 | 0045daa | blog-app-0045daa.zip | 20K | 2025-12-08 |
 | 092c126 | blog-app-092c126.zip | 20K | 2025-12-08 |
+| 0b177ce | blog-app-0b177ce.zip | 20K | 2025-12-08 |
 | 1.0.24 | blog-app-1.0.24.zip | 20K | 2025-12-08 |
 | 1.0.25 | blog-app-1.0.25.zip | 20K | 2025-12-08 |
 | 1.0.26 | blog-app-1.0.26.zip | 20K | 2025-12-08 |
@@ -56,9 +57,9 @@ The ZIP artifact contains:
 
 | Property | Value |
 |----------|-------|
-| Version | 1.0.39 |
-| Filename | blog-app-0045daa.zip |
-| Commit Hash | 0045daa |
-| GitHub Run | #39 |
-| Full Commit | aae2e6fd889be98129cbf04a670ccc0c1cd49b8c |
-| Timestamp | Mon Dec  8 00:45:04 UTC 2025 |
+| Version | 1.0.40 |
+| Filename | blog-app-0b177ce.zip |
+| Commit Hash | 0b177ce |
+| GitHub Run | #40 |
+| Full Commit | 8e102d9f4e6bf5aa6340fd1a278c1594337753f3 |
+| Timestamp | Mon Dec  8 00:52:51 UTC 2025 |
