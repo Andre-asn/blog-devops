@@ -36,24 +36,25 @@ The ZIP artifact contains:
 
 | Version | Filename | Size | Date |
 |---------|----------|------|------|
-| 092c126 | blog-app-092c126.zip | 20K | 2025-12-07 |
-| 1.0.24 | blog-app-1.0.24.zip | 20K | 2025-12-07 |
-| 1.0.25 | blog-app-1.0.25.zip | 20K | 2025-12-07 |
-| 1.0.26 | blog-app-1.0.26.zip | 20K | 2025-12-07 |
-| 1.0.27 | blog-app-1.0.27.zip | 20K | 2025-12-07 |
-| 62610b6 | blog-app-62610b6.zip | 20K | 2025-12-07 |
-| 6efa3ae | blog-app-6efa3ae.zip | 20K | 2025-12-07 |
-| 6f5813c | blog-app-6f5813c.zip | 20K | 2025-12-07 |
-| a583faa | blog-app-a583faa.zip | 20K | 2025-12-07 |
-| b46594b | blog-app-b46594b.zip | 20K | 2025-12-07 |
+| 092c126 | blog-app-092c126.zip | 20K | 2025-12-08 |
+| 1.0.24 | blog-app-1.0.24.zip | 20K | 2025-12-08 |
+| 1.0.25 | blog-app-1.0.25.zip | 20K | 2025-12-08 |
+| 1.0.26 | blog-app-1.0.26.zip | 20K | 2025-12-08 |
+| 1.0.27 | blog-app-1.0.27.zip | 20K | 2025-12-08 |
+| 10aaaa8 | blog-app-10aaaa8.zip | 20K | 2025-12-08 |
+| 62610b6 | blog-app-62610b6.zip | 20K | 2025-12-08 |
+| 6efa3ae | blog-app-6efa3ae.zip | 20K | 2025-12-08 |
+| 6f5813c | blog-app-6f5813c.zip | 20K | 2025-12-08 |
+| a583faa | blog-app-a583faa.zip | 20K | 2025-12-08 |
+| b46594b | blog-app-b46594b.zip | 20K | 2025-12-08 |
 
 ## Current Build
 
 | Property | Value |
 |----------|-------|
-| Version | 1.0.34 |
-| Filename | blog-app-092c126.zip |
-| Commit Hash | 092c126 |
-| GitHub Run | #34 |
-| Full Commit | 7d9a6642fb566938122d374b56838d48b8fce5d0 |
-| Timestamp | Sun Dec  7 23:48:41 UTC 2025 |
+| Version | 1.0.35 |
+| Filename | blog-app-10aaaa8.zip |
+| Commit Hash | 10aaaa8 |
+| GitHub Run | #35 |
+| Full Commit | f598de38cc88b5f60d9a9926bf07cbfafea3e600 |
+| Timestamp | Mon Dec  8 00:01:00 UTC 2025 |
