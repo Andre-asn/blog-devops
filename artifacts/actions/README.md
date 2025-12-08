@@ -45,6 +45,7 @@ The ZIP artifact contains:
 | 1.0.27 | blog-app-1.0.27.zip | 20K | 2025-12-08 |
 | 103f7a0 | blog-app-103f7a0.zip | 20K | 2025-12-08 |
 | 10aaaa8 | blog-app-10aaaa8.zip | 20K | 2025-12-08 |
+| 4e9a02f | blog-app-4e9a02f.zip | 20K | 2025-12-08 |
 | 62610b6 | blog-app-62610b6.zip | 20K | 2025-12-08 |
 | 6efa3ae | blog-app-6efa3ae.zip | 20K | 2025-12-08 |
 | 6f5813c | blog-app-6f5813c.zip | 20K | 2025-12-08 |
@@ -57,9 +58,9 @@ The ZIP artifact contains:
 
 | Property | Value |
 |----------|-------|
-| Version | 1.0.40 |
-| Filename | blog-app-0b177ce.zip |
-| Commit Hash | 0b177ce |
-| GitHub Run | #40 |
-| Full Commit | 8e102d9f4e6bf5aa6340fd1a278c1594337753f3 |
-| Timestamp | Mon Dec  8 00:52:51 UTC 2025 |
+| Version | 1.0.41 |
+| Filename | blog-app-4e9a02f.zip |
+| Commit Hash | 4e9a02f |
+| GitHub Run | #41 |
+| Full Commit | a3b6fc3964ce83b7ffb486e8cb051cbcc657d4ca |
+| Timestamp | Mon Dec  8 01:05:37 UTC 2025 |
