@@ -49,14 +49,15 @@ The ZIP artifact contains:
 | 71e4454 | blog-app-71e4454.zip | 20K | 2025-12-08 |
 | a583faa | blog-app-a583faa.zip | 20K | 2025-12-08 |
 | b46594b | blog-app-b46594b.zip | 20K | 2025-12-08 |
+| db31dca | blog-app-db31dca.zip | 20K | 2025-12-08 |
 
 ## Current Build
 
 | Property | Value |
 |----------|-------|
-| Version | 1.0.37 |
-| Filename | blog-app-103f7a0.zip |
-| Commit Hash | 103f7a0 |
-| GitHub Run | #37 |
-| Full Commit | 8e8419e686c2d459d55a59cdb74d0ddfa8aa0f63 |
-| Timestamp | Mon Dec  8 00:21:08 UTC 2025 |
+| Version | 1.0.38 |
+| Filename | blog-app-db31dca.zip |
+| Commit Hash | db31dca |
+| GitHub Run | #38 |
+| Full Commit | 82cf60df02fd34a83517893b38a3ff775355517a |
+| Timestamp | Mon Dec  8 00:30:40 UTC 2025 |
