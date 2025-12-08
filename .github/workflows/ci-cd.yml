@@ -1057,8 +1057,41 @@ jobs:
       
       - name: Update LaTeX documentation
         run: |
+          echo "=== Updating LaTeX Documentation ==="
+          echo "Current HEAD: $(git rev-parse HEAD)"
+          echo "Current commit short: $(git rev-parse --short=7 HEAD)"
+          echo ""
+          
+          # Check if template exists
+          if [ ! -f "documentation/master_documentation.tex" ]; then
+            echo "❌ Template file not found!"
+            exit 1
+          fi
+          
+          # Show current commit hash in template (before update)
+          echo "Commit hash in template (before):"
+          grep -m 1 "newcommand{\\\COMMITHASH}" documentation/master_documentation.tex || echo "Not found"
+          echo ""
+          
           chmod +x scripts/update_latex_documentation.sh
           ./scripts/update_latex_documentation.sh
+          
+          echo ""
+          echo "=== Verification ==="
+          # Verify the file was updated
+          if grep -q "PLACEHOLDER_COMMIT_HASH" documentation/master_documentation.tex; then
+            echo "❌ ERROR: Placeholders still present in LaTeX file!"
+            exit 1
+          fi
+          
+          echo "Commit hash in template (after):"
+          grep -m 1 "newcommand{\\\COMMITHASH}" documentation/master_documentation.tex || echo "Not found"
+          echo ""
+          echo "✅ LaTeX file updated successfully"
+          
+          # Show file modification time
+          echo "File modification time:"
+          ls -lh documentation/master_documentation.tex
       
       - name: Compile LaTeX to PDF
         run: |
@@ -1100,9 +1133,28 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           
+          # Save the updated files before git operations
+          echo "=== Preserving updated files ==="
+          cp documentation/master_documentation.tex documentation/master_documentation.tex.updated || true
+          cp documentation/master_documentation.pdf documentation/master_documentation.pdf.updated || true
+          
           # Fetch latest to avoid conflicts
           git fetch origin main
-          git pull origin main --rebase --autostash || git reset --hard origin/main
+          
+          # Check if we're behind remote
+          if git rev-list HEAD..origin/main --count | grep -q '[1-9]'; then
+            echo "⚠️  Behind remote, rebasing..."
+            git pull origin main --rebase --autostash || git reset --hard origin/main
+            
+            # Restore the updated files after git operations
+            echo "=== Restoring updated files ==="
+            cp documentation/master_documentation.tex.updated documentation/master_documentation.tex || true
+            cp documentation/master_documentation.pdf.updated documentation/master_documentation.pdf || true
+            rm -f documentation/master_documentation.tex.updated documentation/master_documentation.pdf.updated
+          else
+            echo "✅ Already up to date with remote"
+            rm -f documentation/master_documentation.tex.updated documentation/master_documentation.pdf.updated
+          fi
           
           git add documentation/master_documentation.tex documentation/master_documentation.pdf
           
