@@ -6,11 +6,22 @@ echo "📝 Updating LaTeX master documentation..."
 # Configuration
 LATEX_FILE="documentation/master_documentation.tex"
 OUTPUT_DIR="documentation"
-COMMIT_HASH=$(git rev-parse HEAD)
-COMMIT_SHORT=$(git rev-parse --short=7 HEAD)
-COMMIT_DATE=$(git log -1 --format=%ci HEAD)
-COMMIT_AUTHOR=$(git log -1 --format=%an HEAD)
-COMMIT_MESSAGE=$(git log -1 --format=%B HEAD | head -1)
+
+# Use COMMIT_HASH from environment if provided (from GitHub Actions), otherwise use HEAD
+if [ -n "${COMMIT_HASH}" ]; then
+    echo "Using commit hash from environment: ${COMMIT_HASH}"
+    COMMIT_SHORT=$(echo "${COMMIT_HASH}" | cut -c1-7)
+    COMMIT_DATE=$(git log -1 --format=%ci "${COMMIT_HASH}")
+    COMMIT_AUTHOR=$(git log -1 --format=%an "${COMMIT_HASH}")
+    COMMIT_MESSAGE=$(git log -1 --format=%B "${COMMIT_HASH}" | head -1)
+else
+    echo "Using commit hash from HEAD"
+    COMMIT_HASH=$(git rev-parse HEAD)
+    COMMIT_SHORT=$(git rev-parse --short=7 HEAD)
+    COMMIT_DATE=$(git log -1 --format=%ci HEAD)
+    COMMIT_AUTHOR=$(git log -1 --format=%an HEAD)
+    COMMIT_MESSAGE=$(git log -1 --format=%B HEAD | head -1)
+fi
 
 # Get commit changes (will be written directly to file later)
 echo "📋 Gathering commit changes..."
