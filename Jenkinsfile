@@ -405,6 +405,136 @@ DOCREADME
             }
         }
         
+        stage('Install LaTeX Dependencies') {
+            steps {
+                echo '📦 Installing LaTeX packages...'
+                sh '''
+                    # Check if LaTeX is already installed
+                    if command -v pdflatex > /dev/null 2>&1; then
+                        echo "✅ LaTeX already installed: $(pdflatex --version | head -1)"
+                    else
+                        echo "Installing BasicTeX (lightweight LaTeX distribution)..."
+                        brew install --cask basictex || {
+                            echo "⚠️  BasicTeX installation failed, trying MacTeX..."
+                            brew install --cask mactex-no-gui || {
+                                echo "❌ Failed to install LaTeX"
+                                exit 1
+                            }
+                        }
+                        
+                        # Add TeX binaries to PATH
+                        export PATH="/usr/local/texlive/2023basic/bin/universal-darwin:$PATH"
+                        export PATH="/Library/TeX/texbin:$PATH"
+                        
+                        # Verify installation
+                        if command -v pdflatex > /dev/null 2>&1; then
+                            echo "✅ LaTeX installed successfully"
+                            pdflatex --version | head -1
+                        else
+                            echo "❌ LaTeX installation verification failed"
+                            exit 1
+                        fi
+                    fi
+                '''
+            }
+        }
+        
+        stage('Update LaTeX Documentation') {
+            steps {
+                echo '📝 Updating LaTeX master documentation...'
+                sh '''
+                    echo "=== Updating LaTeX Documentation ==="
+                    echo "Current HEAD: $(git rev-parse HEAD)"
+                    echo "Current commit short: $(git rev-parse --short=7 HEAD)"
+                    echo ""
+                    
+                    # Check if template exists
+                    if [ ! -f "documentation/master_documentation.tex" ]; then
+                        echo "❌ Template file not found!"
+                        exit 1
+                    fi
+                    
+                    # Show current commit hash in template (before update)
+                    echo "Commit hash in template (before):"
+                    grep -m 1 "newcommand{\\\COMMITHASH}" documentation/master_documentation.tex || echo "Not found"
+                    echo ""
+                    
+                    chmod +x scripts/update_latex_documentation.sh
+                    ./scripts/update_latex_documentation.sh
+                    
+                    echo ""
+                    echo "=== Verification ==="
+                    # Verify the file was updated with the correct commit hash
+                    EXPECTED_HASH=$(git rev-parse --short=7 HEAD)
+                    ACTUAL_HASH=$(grep -m 1 "newcommand{\\\COMMITHASH}" documentation/master_documentation.tex | sed 's/.*{\([^}]*\)}.*/\1/')
+                    
+                    echo "Expected commit hash: ${EXPECTED_HASH}"
+                    echo "Actual commit hash in file: ${ACTUAL_HASH}"
+                    
+                    if [ "${EXPECTED_HASH}" != "${ACTUAL_HASH}" ]; then
+                        echo "❌ ERROR: Commit hash mismatch! File was not updated correctly."
+                        echo "   Expected: ${EXPECTED_HASH}"
+                        echo "   Found: ${ACTUAL_HASH}"
+                        exit 1
+                    fi
+                    
+                    echo "✅ LaTeX file updated successfully with commit ${EXPECTED_HASH}"
+                    
+                    # Show file modification time
+                    echo "File modification time:"
+                    ls -lh documentation/master_documentation.tex
+                '''
+            }
+        }
+        
+        stage('Compile LaTeX to PDF') {
+            steps {
+                echo '📄 Compiling LaTeX document to PDF...'
+                sh '''
+                    # Add TeX binaries to PATH
+                    export PATH="/usr/local/texlive/2023basic/bin/universal-darwin:$PATH"
+                    export PATH="/Library/TeX/texbin:$PATH"
+                    
+                    echo "📄 Compiling LaTeX document..."
+                    cd documentation
+                    
+                    # Run pdflatex multiple times for TOC and references
+                    pdflatex -interaction=nonstopmode -halt-on-error master_documentation.tex || {
+                        echo "⚠️  First compilation had warnings/errors, checking output..."
+                        if [ -f master_documentation.pdf ]; then
+                            echo "✅ PDF was generated despite warnings"
+                        else
+                            echo "❌ PDF generation failed"
+                            if [ -f master_documentation.log ]; then
+                                cat master_documentation.log | tail -50
+                            fi
+                            exit 1
+                        fi
+                    }
+                    
+                    # Second pass for TOC
+                    pdflatex -interaction=nonstopmode -halt-on-error master_documentation.tex || true
+                    
+                    # Third pass to ensure all references are resolved
+                    pdflatex -interaction=nonstopmode master_documentation.tex || true
+                    
+                    if [ -f master_documentation.pdf ]; then
+                        echo "✅ PDF generated successfully"
+                        ls -lh master_documentation.pdf
+                        echo ""
+                        echo "PDF size: $(du -h master_documentation.pdf | cut -f1)"
+                    else
+                        echo "❌ PDF generation failed"
+                        if [ -f master_documentation.log ]; then
+                            echo "LaTeX log file:"
+                            cat master_documentation.log | tail -100
+                        fi
+                        exit 1
+                    fi
+                '''
+            }
+        }
+        
         stage('Generate Deployment Artifact') {
             steps {
                 echo '📦 Generating deployment-ready artifact with semantic versioning...'
@@ -641,12 +771,16 @@ ARTIFACTREADME
                                 echo "Conflicts in: $CONFLICTS"
                                 
                                 # Resolve conflicts in our directories
-                                if echo "$CONFLICTS" | grep -qE "docs/jenkins-doc/|artifacts/jenkins/"; then
-                                    echo "Conflict in jenkins paths, using our version..."
+                                if echo "$CONFLICTS" | grep -qE "docs/jenkins-doc/|artifacts/jenkins/|documentation/master_documentation"; then
+                                    echo "Conflict in jenkins paths or LaTeX docs, using our version..."
                                     git checkout --ours docs/jenkins-doc/ 2>/dev/null || true
                                     git checkout --ours artifacts/jenkins/ 2>/dev/null || true
+                                    git checkout --ours documentation/master_documentation.tex 2>/dev/null || true
+                                    git checkout --ours documentation/master_documentation.pdf 2>/dev/null || true
                                     git add docs/jenkins-doc/ 2>/dev/null || true
                                     git add artifacts/jenkins/ 2>/dev/null || true
+                                    git add documentation/master_documentation.tex 2>/dev/null || true
+                                    git add documentation/master_documentation.pdf 2>/dev/null || true
                                     git rebase --continue || {
                                         git rebase --skip 2>/dev/null || true
                                     }
@@ -660,6 +794,15 @@ ARTIFACTREADME
                             echo "✅ Already up to date with remote"
                         fi
                         
+                        # Save the updated LaTeX files before git operations
+                        echo "=== Preserving updated LaTeX files ==="
+                        if [ -f "documentation/master_documentation.tex" ]; then
+                            cp documentation/master_documentation.tex documentation/master_documentation.tex.updated || true
+                        fi
+                        if [ -f "documentation/master_documentation.pdf" ]; then
+                            cp documentation/master_documentation.pdf documentation/master_documentation.pdf.updated || true
+                        fi
+                        
                         # Check if files exist
                         HAS_CHANGES=false
                         
@@ -671,6 +814,26 @@ ARTIFACTREADME
                         if [ -d "${ARTIFACT_DIR}" ] && [ "$(ls -A ${ARTIFACT_DIR} 2>/dev/null)" ]; then
                             git add ${ARTIFACT_DIR}/
                             HAS_CHANGES=true
+                        fi
+                        
+                        # Add LaTeX documentation files
+                        if [ -f "documentation/master_documentation.tex" ]; then
+                            git add documentation/master_documentation.tex
+                            HAS_CHANGES=true
+                        fi
+                        if [ -f "documentation/master_documentation.pdf" ]; then
+                            git add documentation/master_documentation.pdf
+                            HAS_CHANGES=true
+                        fi
+                        
+                        # Restore updated files if they were overwritten by git operations
+                        if [ -f "documentation/master_documentation.tex.updated" ]; then
+                            cp documentation/master_documentation.tex.updated documentation/master_documentation.tex || true
+                            git add documentation/master_documentation.tex
+                        fi
+                        if [ -f "documentation/master_documentation.pdf.updated" ]; then
+                            cp documentation/master_documentation.pdf.updated documentation/master_documentation.pdf || true
+                            git add documentation/master_documentation.pdf
                         fi
                         
                         if [ "$HAS_CHANGES" = false ]; then
@@ -698,8 +861,12 @@ Generated by Jenkins Pipeline:
 - Version: ${VERSION}
 - UML documentation updates
 - Class and package diagrams
+- LaTeX master documentation updated and compiled
 
 [skip ci]"
+                        
+                        # Clean up temporary files
+                        rm -f documentation/master_documentation.tex.updated documentation/master_documentation.pdf.updated
                         
                         # Push to repository
                         echo "Pushing to repository..."
