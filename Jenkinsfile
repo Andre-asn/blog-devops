@@ -456,7 +456,8 @@ DOCREADME
                     
                     # Show current commit hash in template (before update)
                     echo "Commit hash in template (before):"
-                    grep -m 1 "newcommand{\\\COMMITHASH}" documentation/master_documentation.tex || echo "Not found"
+                    # Use a pattern that avoids Groovy backslash parsing issues
+                    grep -m 1 "newcommand.*COMMITHASH" documentation/master_documentation.tex || echo "Not found"
                     echo ""
                     
                     chmod +x scripts/update_latex_documentation.sh
@@ -466,7 +467,8 @@ DOCREADME
                     echo "=== Verification ==="
                     # Verify the file was updated with the correct commit hash
                     EXPECTED_HASH=$(git rev-parse --short=7 HEAD)
-                    ACTUAL_HASH=$(grep -m 1 "newcommand{\\\COMMITHASH}" documentation/master_documentation.tex | sed 's/.*{\([^}]*\)}.*/\1/')
+                    # Use a pattern that avoids Groovy backslash parsing issues
+                    ACTUAL_HASH=$(grep -m 1 "newcommand.*COMMITHASH" documentation/master_documentation.tex | sed 's/.*{\([^}]*\)}.*/\1/')
                     
                     echo "Expected commit hash: ${EXPECTED_HASH}"
                     echo "Actual commit hash in file: ${ACTUAL_HASH}"
